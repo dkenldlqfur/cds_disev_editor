@@ -1,0 +1,1218 @@
+{
+  "source": {
+    "kind": "CDS_95.EXE discovery-to-hint mapping",
+    "mapping_source": "HintUtilKR disc_hint.h; names/state offsets verified against supplied hint table",
+    "discovery_count": 274,
+    "hint_count": 186,
+    "hint_record_size": 6,
+    "hint_state_field_offset": 4
+  },
+  "discovery_hint_ids": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    -1,
+    22,
+    23,
+    24,
+    25,
+    27,
+    -1,
+    28,
+    29,
+    -1,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    -1,
+    36,
+    38,
+    39,
+    152,
+    40,
+    41,
+    42,
+    43,
+    -1,
+    44,
+    45,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    -1,
+    -1,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    49,
+    -1,
+    74,
+    -1,
+    -1,
+    75,
+    76,
+    77,
+    78,
+    92,
+    79,
+    80,
+    81,
+    82,
+    83,
+    -1,
+    84,
+    85,
+    86,
+    87,
+    88,
+    89,
+    -1,
+    90,
+    91,
+    92,
+    93,
+    94,
+    -1,
+    95,
+    -1,
+    96,
+    97,
+    98,
+    99,
+    100,
+    101,
+    102,
+    -1,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    -1,
+    -1,
+    -1,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115,
+    -1,
+    116,
+    117,
+    118,
+    119,
+    120,
+    121,
+    122,
+    123,
+    124,
+    125,
+    126,
+    -1,
+    -1,
+    127,
+    128,
+    129,
+    130,
+    -1,
+    131,
+    132,
+    133,
+    134,
+    135,
+    -1,
+    136,
+    137,
+    138,
+    139,
+    140,
+    -1,
+    141,
+    142,
+    143,
+    144,
+    145,
+    146,
+    147,
+    148,
+    149,
+    150,
+    151,
+    -1,
+    153,
+    154,
+    155,
+    156,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    157,
+    -1,
+    -1,
+    158,
+    159,
+    160,
+    161,
+    162,
+    163,
+    164,
+    165,
+    166,
+    167,
+    168,
+    169,
+    170,
+    171,
+    172,
+    173,
+    174,
+    175,
+    176,
+    177,
+    178,
+    179,
+    180,
+    181,
+    182,
+    183,
+    184,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    185
+  ],
+  "hints": [
+    {
+      "id": 0,
+      "name": "아프리카남단",
+      "state_offset": "0x1A629"
+    },
+    {
+      "id": 1,
+      "name": "서회항로",
+      "state_offset": "0x1A62F"
+    },
+    {
+      "id": 2,
+      "name": "인도항로",
+      "state_offset": "0x1A635"
+    },
+    {
+      "id": 3,
+      "name": "말라카해협",
+      "state_offset": "0x1A63B"
+    },
+    {
+      "id": 4,
+      "name": "향료제도",
+      "state_offset": "0x1A641"
+    },
+    {
+      "id": 5,
+      "name": "중국",
+      "state_offset": "0x1A647"
+    },
+    {
+      "id": 6,
+      "name": "신세계해협",
+      "state_offset": "0x1A64D"
+    },
+    {
+      "id": 7,
+      "name": "세계일주항로",
+      "state_offset": "0x1A653"
+    },
+    {
+      "id": 8,
+      "name": "지팡그",
+      "state_offset": "0x1A659"
+    },
+    {
+      "id": 9,
+      "name": "남방대륙",
+      "state_offset": "0x1A65F"
+    },
+    {
+      "id": 10,
+      "name": "남극대륙",
+      "state_offset": "0x1A665"
+    },
+    {
+      "id": 11,
+      "name": "북쪽해협",
+      "state_offset": "0x1A66B"
+    },
+    {
+      "id": 12,
+      "name": "땅끝해협",
+      "state_offset": "0x1A671"
+    },
+    {
+      "id": 13,
+      "name": "흰 비늘계단",
+      "state_offset": "0x1A677"
+    },
+    {
+      "id": 14,
+      "name": "황산",
+      "state_offset": "0x1A67D"
+    },
+    {
+      "id": 15,
+      "name": "지구의 배꼽",
+      "state_offset": "0x1A683"
+    },
+    {
+      "id": 16,
+      "name": "웅대한 협곡",
+      "state_offset": "0x1A689"
+    },
+    {
+      "id": 17,
+      "name": "신의 제단",
+      "state_offset": "0x1A68F"
+    },
+    {
+      "id": 18,
+      "name": "큰호수폭포",
+      "state_offset": "0x1A695"
+    },
+    {
+      "id": 19,
+      "name": "이구아수 폭포",
+      "state_offset": "0x1A69B"
+    },
+    {
+      "id": 20,
+      "name": "카르낙 거석군",
+      "state_offset": "0x1A6A1"
+    },
+    {
+      "id": 21,
+      "name": "거석제단",
+      "state_offset": "0x1A6A7"
+    },
+    {
+      "id": 22,
+      "name": "미케네",
+      "state_offset": "0x1A6AD"
+    },
+    {
+      "id": 23,
+      "name": "파르테논 신전",
+      "state_offset": "0x1A6B3"
+    },
+    {
+      "id": 24,
+      "name": "델포이 성지",
+      "state_offset": "0x1A6B9"
+    },
+    {
+      "id": 25,
+      "name": "크노소스",
+      "state_offset": "0x1A6BF"
+    },
+    {
+      "id": 26,
+      "name": "이집트 피라미드",
+      "state_offset": "0x1A6C5"
+    },
+    {
+      "id": 27,
+      "name": "기제의 3대 피라미드",
+      "state_offset": "0x1A6CB"
+    },
+    {
+      "id": 28,
+      "name": "왕가의 계곡",
+      "state_offset": "0x1A6D1"
+    },
+    {
+      "id": 29,
+      "name": "테베의 신전군",
+      "state_offset": "0x1A6D7"
+    },
+    {
+      "id": 30,
+      "name": "람세스2세의 대신전",
+      "state_offset": "0x1A6DD"
+    },
+    {
+      "id": 31,
+      "name": "트로이",
+      "state_offset": "0x1A6E3"
+    },
+    {
+      "id": 32,
+      "name": "이슈탈문",
+      "state_offset": "0x1A6E9"
+    },
+    {
+      "id": 33,
+      "name": "페르세폴리스",
+      "state_offset": "0x1A6EF"
+    },
+    {
+      "id": 34,
+      "name": "인더스의 성체",
+      "state_offset": "0x1A6F5"
+    },
+    {
+      "id": 35,
+      "name": "크메르의 사원",
+      "state_offset": "0x1A6FB"
+    },
+    {
+      "id": 36,
+      "name": "운강 석불",
+      "state_offset": "0x1A701"
+    },
+    {
+      "id": 37,
+      "name": "진시황릉",
+      "state_offset": "0x1A707"
+    },
+    {
+      "id": 38,
+      "name": "만리장성",
+      "state_offset": "0x1A70D"
+    },
+    {
+      "id": 39,
+      "name": "건릉",
+      "state_offset": "0x1A713"
+    },
+    {
+      "id": 40,
+      "name": "무녕왕릉",
+      "state_offset": "0x1A719"
+    },
+    {
+      "id": 41,
+      "name": "풍요의 마을",
+      "state_offset": "0x1A71F"
+    },
+    {
+      "id": 42,
+      "name": "자바의 거대불탑",
+      "state_offset": "0x1A725"
+    },
+    {
+      "id": 43,
+      "name": "돌 전사상",
+      "state_offset": "0x1A72B"
+    },
+    {
+      "id": 44,
+      "name": "거대지상화",
+      "state_offset": "0x1A731"
+    },
+    {
+      "id": 45,
+      "name": "티아와나코",
+      "state_offset": "0x1A737"
+    },
+    {
+      "id": 46,
+      "name": "포아체성당",
+      "state_offset": "0x1A73D"
+    },
+    {
+      "id": 47,
+      "name": "몽생미셀",
+      "state_offset": "0x1A743"
+    },
+    {
+      "id": 48,
+      "name": "북유럽의 목조교회",
+      "state_offset": "0x1A749"
+    },
+    {
+      "id": 49,
+      "name": "러시아교회",
+      "state_offset": "0x1A74F"
+    },
+    {
+      "id": 50,
+      "name": "성소피아 대성당",
+      "state_offset": "0x1A755"
+    },
+    {
+      "id": 51,
+      "name": "프레스테 조안국",
+      "state_offset": "0x1A75B"
+    },
+    {
+      "id": 52,
+      "name": "카파도키아",
+      "state_offset": "0x1A761"
+    },
+    {
+      "id": 53,
+      "name": "성분묘교회",
+      "state_offset": "0x1A767"
+    },
+    {
+      "id": 54,
+      "name": "에돔 도시",
+      "state_offset": "0x1A76D"
+    },
+    {
+      "id": 55,
+      "name": "갈데아 우르의 성탑",
+      "state_offset": "0x1A773"
+    },
+    {
+      "id": 56,
+      "name": "성자의 약속의 거리",
+      "state_offset": "0x1A779"
+    },
+    {
+      "id": 57,
+      "name": "나바테아의 암굴도시",
+      "state_offset": "0x1A77F"
+    },
+    {
+      "id": 58,
+      "name": "시볼라의 일곱고을",
+      "state_offset": "0x1A785"
+    },
+    {
+      "id": 59,
+      "name": "노아의 방주",
+      "state_offset": "0x1A78B"
+    },
+    {
+      "id": 60,
+      "name": "바벨탑",
+      "state_offset": "0x1A791"
+    },
+    {
+      "id": 61,
+      "name": "진흙모스크",
+      "state_offset": "0x1A797"
+    },
+    {
+      "id": 62,
+      "name": "짐바브웨 요새",
+      "state_offset": "0x1A79D"
+    },
+    {
+      "id": 63,
+      "name": "인도의 빛의 모스크",
+      "state_offset": "0x1A7A3"
+    },
+    {
+      "id": 64,
+      "name": "힌두교 사원",
+      "state_offset": "0x1A7A9"
+    },
+    {
+      "id": 65,
+      "name": "면 불탑",
+      "state_offset": "0x1A7AF"
+    },
+    {
+      "id": 66,
+      "name": "아유타야의 불두",
+      "state_offset": "0x1A7B5"
+    },
+    {
+      "id": 67,
+      "name": "달라이라마의 궁전",
+      "state_offset": "0x1A7BB"
+    },
+    {
+      "id": 68,
+      "name": "황금 사원",
+      "state_offset": "0x1A7C1"
+    },
+    {
+      "id": 69,
+      "name": "석조촌",
+      "state_offset": "0x1A7C7"
+    },
+    {
+      "id": 70,
+      "name": "태양신전",
+      "state_offset": "0x1A7CD"
+    },
+    {
+      "id": 71,
+      "name": "돌 요새",
+      "state_offset": "0x1A7D3"
+    },
+    {
+      "id": 72,
+      "name": "훗 마츠아의 거인상",
+      "state_offset": "0x1A7D9"
+    },
+    {
+      "id": 73,
+      "name": "무제국",
+      "state_offset": "0x1A7DF"
+    },
+    {
+      "id": 74,
+      "name": "마스지트·이·샤",
+      "state_offset": "0x1A7E5"
+    },
+    {
+      "id": 75,
+      "name": "알 함브라 궁전",
+      "state_offset": "0x1A7EB"
+    },
+    {
+      "id": 76,
+      "name": "바위 돔",
+      "state_offset": "0x1A7F1"
+    },
+    {
+      "id": 77,
+      "name": "크투브 미나르",
+      "state_offset": "0x1A7F7"
+    },
+    {
+      "id": 78,
+      "name": "아난다 사원",
+      "state_offset": "0x1A7FD"
+    },
+    {
+      "id": 79,
+      "name": "베오울프의 황금투구",
+      "state_offset": "0x1A803"
+    },
+    {
+      "id": 80,
+      "name": "영국왕실의 보물",
+      "state_offset": "0x1A809"
+    },
+    {
+      "id": 81,
+      "name": "아가멤논의 마스크",
+      "state_offset": "0x1A80F"
+    },
+    {
+      "id": 82,
+      "name": "소년왕의 비보",
+      "state_offset": "0x1A815"
+    },
+    {
+      "id": 83,
+      "name": "고대 이집트의 기록",
+      "state_offset": "0x1A81B"
+    },
+    {
+      "id": 84,
+      "name": "사르곤왕의 두상",
+      "state_offset": "0x1A821"
+    },
+    {
+      "id": 85,
+      "name": "우르의 황금머리장식",
+      "state_offset": "0x1A827"
+    },
+    {
+      "id": 86,
+      "name": "금은 접시",
+      "state_offset": "0x1A82D"
+    },
+    {
+      "id": 87,
+      "name": "은 주전자",
+      "state_offset": "0x1A833"
+    },
+    {
+      "id": 88,
+      "name": "시바신상",
+      "state_offset": "0x1A839"
+    },
+    {
+      "id": 89,
+      "name": "황금코끼리",
+      "state_offset": "0x1A83F"
+    },
+    {
+      "id": 90,
+      "name": "금루옥의",
+      "state_offset": "0x1A845"
+    },
+    {
+      "id": 91,
+      "name": "은, 주의 청동기",
+      "state_offset": "0x1A84B"
+    },
+    {
+      "id": 92,
+      "name": "중국의 칠보",
+      "state_offset": "0x1A851"
+    },
+    {
+      "id": 93,
+      "name": "후풍지동의",
+      "state_offset": "0x1A857"
+    },
+    {
+      "id": 94,
+      "name": "흰 유리그릇",
+      "state_offset": "0x1A85D"
+    },
+    {
+      "id": 95,
+      "name": "왜국의 금도장",
+      "state_offset": "0x1A863"
+    },
+    {
+      "id": 96,
+      "name": "수정해골",
+      "state_offset": "0x1A869"
+    },
+    {
+      "id": 97,
+      "name": "황금의 땅 엘도라도",
+      "state_offset": "0x1A86F"
+    },
+    {
+      "id": 98,
+      "name": "비취가면",
+      "state_offset": "0x1A875"
+    },
+    {
+      "id": 99,
+      "name": "아더왕의 성배",
+      "state_offset": "0x1A87B"
+    },
+    {
+      "id": 100,
+      "name": "성스테판의 관",
+      "state_offset": "0x1A881"
+    },
+    {
+      "id": 101,
+      "name": "성스러운 유물상자",
+      "state_offset": "0x1A887"
+    },
+    {
+      "id": 102,
+      "name": "테라코타상",
+      "state_offset": "0x1A88D"
+    },
+    {
+      "id": 103,
+      "name": "네스호의 괴수",
+      "state_offset": "0x1A893"
+    },
+    {
+      "id": 104,
+      "name": "트롤",
+      "state_offset": "0x1A899"
+    },
+    {
+      "id": 105,
+      "name": "미노타우로스",
+      "state_offset": "0x1A89F"
+    },
+    {
+      "id": 106,
+      "name": "테레호의 수룡",
+      "state_offset": "0x1A8A5"
+    },
+    {
+      "id": 107,
+      "name": "록크",
+      "state_offset": "0x1A8AB"
+    },
+    {
+      "id": 108,
+      "name": "이에티",
+      "state_offset": "0x1A8B1"
+    },
+    {
+      "id": 109,
+      "name": "흰곰",
+      "state_offset": "0x1A8B7"
+    },
+    {
+      "id": 110,
+      "name": "용의 아종",
+      "state_offset": "0x1A8BD"
+    },
+    {
+      "id": 111,
+      "name": "입만 있는 짐승",
+      "state_offset": "0x1A8C3"
+    },
+    {
+      "id": 112,
+      "name": "달리는 새",
+      "state_offset": "0x1A8C9"
+    },
+    {
+      "id": 113,
+      "name": "인면수",
+      "state_offset": "0x1A8CF"
+    },
+    {
+      "id": 114,
+      "name": "헤엄치는 새",
+      "state_offset": "0x1A8D5"
+    },
+    {
+      "id": 115,
+      "name": "별탑",
+      "state_offset": "0x1A8DB"
+    },
+    {
+      "id": 116,
+      "name": "식충동물",
+      "state_offset": "0x1A8E1"
+    },
+    {
+      "id": 117,
+      "name": "지옥의 꽃",
+      "state_offset": "0x1A8E7"
+    },
+    {
+      "id": 118,
+      "name": "남쪽바다의 괴수",
+      "state_offset": "0x1A8ED"
+    },
+    {
+      "id": 119,
+      "name": "사마귀 멧돼지",
+      "state_offset": "0x1A8F3"
+    },
+    {
+      "id": 120,
+      "name": "태고의 물고기",
+      "state_offset": "0x1A8F9"
+    },
+    {
+      "id": 121,
+      "name": "아프리카 바늘두더지",
+      "state_offset": "0x1A8FF"
+    },
+    {
+      "id": 122,
+      "name": "고양이 곰",
+      "state_offset": "0x1A905"
+    },
+    {
+      "id": 123,
+      "name": "호랑이",
+      "state_offset": "0x1A90B"
+    },
+    {
+      "id": 124,
+      "name": "담비",
+      "state_offset": "0x1A911"
+    },
+    {
+      "id": 125,
+      "name": "극락조",
+      "state_offset": "0x1A917"
+    },
+    {
+      "id": 126,
+      "name": "자수수",
+      "state_offset": "0x1A91D"
+    },
+    {
+      "id": 127,
+      "name": "신천옹",
+      "state_offset": "0x1A923"
+    },
+    {
+      "id": 128,
+      "name": "코끼리거북",
+      "state_offset": "0x1A929"
+    },
+    {
+      "id": 129,
+      "name": "군관조",
+      "state_offset": "0x1A92F"
+    },
+    {
+      "id": 130,
+      "name": "숲 속의 주걱사슴",
+      "state_offset": "0x1A935"
+    },
+    {
+      "id": 131,
+      "name": "직립쥐",
+      "state_offset": "0x1A93B"
+    },
+    {
+      "id": 132,
+      "name": "신게계의 가축",
+      "state_offset": "0x1A941"
+    },
+    {
+      "id": 133,
+      "name": "새잡는 거미",
+      "state_offset": "0x1A947"
+    },
+    {
+      "id": 134,
+      "name": "파피루스",
+      "state_offset": "0x1A94D"
+    },
+    {
+      "id": 135,
+      "name": "다리달린 나무",
+      "state_offset": "0x1A953"
+    },
+    {
+      "id": 136,
+      "name": "더듬이풀",
+      "state_offset": "0x1A959"
+    },
+    {
+      "id": 137,
+      "name": "정토의 연꽃",
+      "state_offset": "0x1A95F"
+    },
+    {
+      "id": 138,
+      "name": "빵달린 나무",
+      "state_offset": "0x1A965"
+    },
+    {
+      "id": 139,
+      "name": "세계제일의 거목",
+      "state_offset": "0x1A96B"
+    },
+    {
+      "id": 140,
+      "name": "흰 수액나무",
+      "state_offset": "0x1A971"
+    },
+    {
+      "id": 141,
+      "name": "아프리카 원주민",
+      "state_offset": "0x1A977"
+    },
+    {
+      "id": 142,
+      "name": "수장족",
+      "state_offset": "0x1A97D"
+    },
+    {
+      "id": 143,
+      "name": "식인귀",
+      "state_offset": "0x1A983"
+    },
+    {
+      "id": 144,
+      "name": "숲사람",
+      "state_offset": "0x1A989"
+    },
+    {
+      "id": 145,
+      "name": "남방대륙인",
+      "state_offset": "0x1A98F"
+    },
+    {
+      "id": 146,
+      "name": "무두인",
+      "state_offset": "0x1A995"
+    },
+    {
+      "id": 147,
+      "name": "얼음민족",
+      "state_offset": "0x1A99B"
+    },
+    {
+      "id": 148,
+      "name": "스쿠렐링",
+      "state_offset": "0x1A9A1"
+    },
+    {
+      "id": 149,
+      "name": "아마조네스",
+      "state_offset": "0x1A9A7"
+    },
+    {
+      "id": 150,
+      "name": "파타곤",
+      "state_offset": "0x1A9AD"
+    },
+    {
+      "id": 151,
+      "name": "남극인",
+      "state_offset": "0x1A9B3"
+    },
+    {
+      "id": 152,
+      "name": "네스토리우스파",
+      "state_offset": "0x1A9B9"
+    },
+    {
+      "id": 153,
+      "name": "흡혈귀",
+      "state_offset": "0x1A9BF"
+    },
+    {
+      "id": 154,
+      "name": "태양의 왕국",
+      "state_offset": "0x1A9C5"
+    },
+    {
+      "id": 155,
+      "name": "황금제국",
+      "state_offset": "0x1A9CB"
+    },
+    {
+      "id": 156,
+      "name": "천상의 커튼",
+      "state_offset": "0x1A9D1"
+    },
+    {
+      "id": 157,
+      "name": "비어",
+      "state_offset": "0x1A9D7"
+    },
+    {
+      "id": 158,
+      "name": "인도의 곡물",
+      "state_offset": "0x1A9DD"
+    },
+    {
+      "id": 159,
+      "name": "누에바에스파냐의 곡물",
+      "state_offset": "0x1A9E3"
+    },
+    {
+      "id": 160,
+      "name": "감자",
+      "state_offset": "0x1A9E9"
+    },
+    {
+      "id": 161,
+      "name": "후추",
+      "state_offset": "0x1A9EF"
+    },
+    {
+      "id": 162,
+      "name": "정향",
+      "state_offset": "0x1A9F5"
+    },
+    {
+      "id": 163,
+      "name": "계피",
+      "state_offset": "0x1A9FB"
+    },
+    {
+      "id": 164,
+      "name": "새로운 향료",
+      "state_offset": "0x1AA01"
+    },
+    {
+      "id": 165,
+      "name": "사라센의 활력음료",
+      "state_offset": "0x1AA07"
+    },
+    {
+      "id": 166,
+      "name": "차",
+      "state_offset": "0x1AA0D"
+    },
+    {
+      "id": 167,
+      "name": "신세계의 강장열매",
+      "state_offset": "0x1AA13"
+    },
+    {
+      "id": 168,
+      "name": "담배",
+      "state_offset": "0x1AA19"
+    },
+    {
+      "id": 169,
+      "name": "비단 원료",
+      "state_offset": "0x1AA1F"
+    },
+    {
+      "id": 170,
+      "name": "골동품",
+      "state_offset": "0x1AA25"
+    },
+    {
+      "id": 171,
+      "name": "융단",
+      "state_offset": "0x1AA2B"
+    },
+    {
+      "id": 172,
+      "name": "편사",
+      "state_offset": "0x1AA31"
+    },
+    {
+      "id": 173,
+      "name": "사향",
+      "state_offset": "0x1AA37"
+    },
+    {
+      "id": 174,
+      "name": "유향",
+      "state_offset": "0x1AA3D"
+    },
+    {
+      "id": 175,
+      "name": "용연향",
+      "state_offset": "0x1AA43"
+    },
+    {
+      "id": 176,
+      "name": "백단",
+      "state_offset": "0x1AA49"
+    },
+    {
+      "id": 177,
+      "name": "진주",
+      "state_offset": "0x1AA4F"
+    },
+    {
+      "id": 178,
+      "name": "비취",
+      "state_offset": "0x1AA55"
+    },
+    {
+      "id": 179,
+      "name": "코뿔소 뿔",
+      "state_offset": "0x1AA5B"
+    },
+    {
+      "id": 180,
+      "name": "상아",
+      "state_offset": "0x1AA61"
+    },
+    {
+      "id": 181,
+      "name": "산호",
+      "state_offset": "0x1AA67"
+    },
+    {
+      "id": 182,
+      "name": "별갑",
+      "state_offset": "0x1AA6D"
+    },
+    {
+      "id": 183,
+      "name": "약재",
+      "state_offset": "0x1AA73"
+    },
+    {
+      "id": 184,
+      "name": "노예",
+      "state_offset": "0x1AA79"
+    },
+    {
+      "id": 185,
+      "name": "불국사",
+      "state_offset": "0x1AA7F"
+    }
+  ]
+}

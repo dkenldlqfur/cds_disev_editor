@@ -1,0 +1,25 @@
+{
+  "source": {
+    "file": "CDS_95.EXE",
+    "encoding": "cp949",
+    "city_culture_string_table_file_offset": "0x138BB8",
+    "city_culture_string_table_va": "0x0053B3B8"
+  },
+  "zodiac_names": [
+    "양자리", "황소자리", "쌍둥이자리", "게자리", "사자자리", "처녀자리",
+    "천칭자리", "전갈자리", "궁수자리", "염소자리", "물병자리", "물고기자리"
+  ],
+  "city_cultures": [
+    { "id": 0, "name": "이베리아" },
+    { "id": 1, "name": "북유럽" },
+    { "id": 2, "name": "지중해" },
+    { "id": 3, "name": "아프리카" },
+    { "id": 4, "name": "중근동" },
+    { "id": 5, "name": "인도" },
+    { "id": 6, "name": "중국" },
+    { "id": 7, "name": "중앙아시아" },
+    { "id": 8, "name": "동남아시아" },
+    { "id": 9, "name": "일본" },
+    { "id": 10, "name": "아메리카" }
+  ]
+}

@@ -1,0 +1,28 @@
+# Python bytecode and local tooling
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# PyInstaller output
+build/
+dist/
+*.spec.bak
+
+# Editor/runtime temporary files
+*.disev_editor.tmp
+*.part
+*.bak
+
+# Local IDE and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
+Desktop.ini
