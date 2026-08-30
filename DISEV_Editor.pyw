@@ -3839,7 +3839,12 @@ class DisevEditor:
         self.status_var.set(ui("status_exe_mapped", len(self.discovery_part_map)))
 
     def _build_discovery_part_map(self, rows: list[disev.DiscoveryRow]) -> dict[int, int]:
-        """EXE 발견물 목록의 상태 ID로 DISEV 등록 명령 파트를 찾는다."""
+        """EXE 발견물 목록을 DISEV 파트에 연결한다.
+
+        발견물 등록/발견 처리(01 0B)가 있는 파트는 그 명령의 대상 ID를 우선한다.
+        다만 원본에는 등록 처리가 없는 발견물 이벤트도 있으므로, 그런 항목은
+        발견물 ID와 같은 번호의 파트를 기본 연결해 목록에서 숨기지 않는다.
+        """
         valid_ids = {row.index for row in rows}
         candidates: dict[int, list[int]] = {}
         for part_index, part in enumerate(self.parts):
@@ -3859,6 +3864,9 @@ class DisevEditor:
             mapping[discovery_id] = (
                 discovery_id if discovery_id in part_indexes else min(part_indexes)
             )
+        for row in rows:
+            if row.index not in mapping and 0 <= row.index < len(self.parts):
+                mapping[row.index] = row.index
         return mapping
 
     def _row_for_discovery(self, discovery_id: int | None) -> disev.DiscoveryRow | None:
