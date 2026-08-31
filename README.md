@@ -2,7 +2,7 @@
 
 대항해시대 3 한국어판의 `DISEV.CDS` 발견물 이벤트 스크립트를 확인하고 편집하는 Windows용 도구입니다.
 
-현재 버전: **v0.1**
+최신 버전: [![GitHub Release](https://img.shields.io/github/v/release/dkenldlqfur/cds_disev_editor?display_name=tag&label=%EC%B5%9C%EC%8B%A0%20%EB%B2%84%EC%A0%84)](https://github.com/dkenldlqfur/cds_disev_editor/releases/latest)
 
 ## 주요 기능
 
