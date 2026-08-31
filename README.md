@@ -80,7 +80,8 @@ py -3 -m PyInstaller --noconfirm --clean DISEV_Editor.spec
 
 ```text
 DISEV_Editor.pyw              편집기 본체
-dump_disev.py                 DISEV 아카이브 분석·입출력
+Resources/dump_disev.py       DISEV 아카이브 분석·입출력
+Resources/discovery_records.py 발견물 EXE 레코드 탐색·해석
 Resources/data/app_config.json 버전 및 업데이트 설정
 Resources/data/ui_texts.json  화면 문구
 Resources/splash.jpg          배포 EXE 시작 스플래시

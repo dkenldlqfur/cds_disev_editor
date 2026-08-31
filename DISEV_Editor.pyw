@@ -29,7 +29,7 @@ from tkinter import filedialog, messagebox, ttk
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-import dump_disev as disev
+from Resources import dump_disev as disev
 
 
 def _resource_data_dirs() -> tuple[Path, ...]:
@@ -202,33 +202,56 @@ DIALOGUE_KINDS = ("대사", "예/아니오 대사", "다중 선택지 대사", "
 CHARACTER_TARGET_COMMAND_KINDS = (
     "인물 참조 설정", "인물 상태 처리 1", "인물 상태 처리 2", "인물 상태 처리 3", "인물 상태 처리 4", "인물 상태 비트 해제", "인물 선택 판정", "인물 위치 판정",
 )
+MINIGAME_SUBKINDS = (
+    "성배 퍼즐", "스핑크스 퀴즈", "미궁 64 퍼즐", "낚시 게임",
+    "코인 게임 (천칭 퍼즐)", "발라몬의 탑 퍼즐", "화살표 입방체 퍼즐",
+)
+MINIGAME_TYPE_BY_SUBKIND = {name: index for index, name in enumerate(MINIGAME_SUBKINDS)}
+MINIGAME_SUBKIND_BY_TYPE = {index: name for name, index in MINIGAME_TYPE_BY_SUBKIND.items()}
+MINIGAME_EVENT_TYPES = frozenset((0, 1, 2, 3, 6))
 BODY_COMMAND_GROUPS: dict[str, tuple[str, ...]] = {
     "발견": (),
-    "아이템": ("획득", "상실"),
+    "아이템": ("획득", "소지품 추가", "소지품 제거"),
     "음원": ("재생", "정지"),
     "미디어": ("이미지", "동영상"),
     "대사": ("일반", "예/아니오", "다중 선택", "대상 지정"),
-    "이벤트 아이템": ("등록", "처리"), "특수 조우 연출 설정": (), "특수 수치 판정": (),
-    "해상 전투": (), "인물 이벤트 실행": (), "인물 이벤트 실행 (보조)": (), "이벤트 분류 설정": (),
-    "이벤트 조건 판정": (), "이벤트 내부 참조": (), "주인공 성격 판정": (), "이벤트 판정": (), "힌트 획득": (),
+    "이벤트 상태": ("아이템 처리", "값 2 설정"), "특수 조우 연출 설정": (),
+    "해상 전투": (), "인물 이벤트": ("실행 방식 2", "실행 방식 3", "실행 모드 설정"),
+    "조건 판정": ("숨은 수치 확률",), "주인공 성격 판정": (), "미니게임": MINIGAME_SUBKINDS, "힌트 획득": (),
     "대기": (), "날짜 경과": (), "발견물 이름 설정": (), "신도시 생성": (), "대화창": ("숨김", "표시"),
     "결과 설정": ("거짓", "참"),
-    "행 이동": ("이전 조건", "이전 판정 참", "특수 분기", "선택지 결과", "힌트 상태", "발견물", "아이템 상태", "기준 연도", "연도 상한", "연도 범위", "도시 조건", "NPC 조건", "상태값"),
-    "상태값": ("증감", "설정", "증감 (상태값 참조)"), "인물 상태": ("참조 설정", "처리 1", "처리 2", "처리 3", "처리 4", "비트 해제", "선택 판정", "위치 판정"), "소지금": ("증가", "감소", "비교 분기"), "외부 분기": ("STORY0.CDS", "STORY1.CDS"), "이벤트 플래그 설정": (),
-    "내부 상태 설정": (), "특수 상태 처리": (), "이벤트 결과 코드": (),
+    "행 이동": ("이전 조건", "이전 판정 참", "특수 분기", "선택지 결과", "힌트 상태", "발견물", "아이템 상태", "기준 연도", "연도 상한", "연도 범위", "도시 조건", "NPC 조건", "상태값", "파트 오프셋"),
+    "상태값": ("증감", "설정", "증감 (상태값 참조)"),
+    "인물 상태": ("이벤트 인물 참조 바인딩", "런타임 상태 초기화", "통역 고용/교체", "상태 비트 02 설정", "상태 비트 04 설정", "상태 비트 04 해제", "선택 판정", "위치 판정"),
+    "소지금": ("증가", "감소", "비교 분기"), "외부 분기": ("STORY0.CDS", "STORY1.CDS"), "이벤트 플래그 설정": (),
+    "인원": ("투입 인원 절반",), "이벤트 결과 코드": (),
 }
 BODY_GROUP_TO_KIND = {
     ("발견", ""): "발견물 등록/발견 처리",
-    ("아이템", "획득"): "아이템 획득", ("아이템", "상실"): "아이템 상실",
-    ("이벤트 아이템", "등록"): "이벤트 아이템 등록", ("이벤트 아이템", "처리"): "이벤트 아이템 처리",
+    ("아이템", "획득"): "아이템 획득",
+    ("아이템", "소지품 추가"): "이벤트 아이템 등록",
+    ("아이템", "소지품 제거"): "아이템 상실",
+    ("이벤트 상태", "아이템 처리"): "이벤트 아이템 처리",
+    ("이벤트 상태", "값 2 설정"): "내부 상태 설정",
     ("음원", "재생"): "음원 재생", ("음원", "정지"): "음원 정지",
+    ("미니게임", "성배 퍼즐"): "이벤트 판정",
+    ("미니게임", "스핑크스 퀴즈"): "이벤트 판정",
+    ("미니게임", "미궁 64 퍼즐"): "이벤트 판정",
+    ("미니게임", "낚시 게임"): "이벤트 판정",
+    ("미니게임", "코인 게임 (천칭 퍼즐)"): "특수 수치 판정",
+    ("미니게임", "발라몬의 탑 퍼즐"): "특수 수치 판정",
+    ("미니게임", "화살표 입방체 퍼즐"): "이벤트 판정",
     ("미디어", "DSTILL"): "DSTILL 이미지 표시", ("미디어", "EVSTILL"): "EVSTILL 이미지 표시",
     ("미디어", "종료"): "이미지 표시 종료", ("미디어", "CG"): "CG 애니메이션 재생", ("미디어", "AVI"): "AVI 재생",
     ("대사", "일반"): "대사", ("대사", "예/아니오"): "예/아니오 대사", ("대사", "다중 선택"): "다중 선택지 대사", ("대사", "대상 지정"): "대상 지정 대사",
     ("발견물 이름 설정", ""): "발견물 이름 설정",
     ("상태값", "증감"): "상태값 증감", ("상태값", "설정"): "상태값 설정",
     ("상태값", "증감 (상태값 참조)"): "상태값 참조 증가",
-    ("인물 상태", "참조 설정"): "인물 참조 설정", ("인물 상태", "처리 1"): "인물 상태 처리 1", ("인물 상태", "처리 2"): "인물 상태 처리 2", ("인물 상태", "처리 3"): "인물 상태 처리 3", ("인물 상태", "처리 4"): "인물 상태 처리 4", ("인물 상태", "비트 해제"): "인물 상태 비트 해제", ("인물 상태", "선택 판정"): "인물 선택 판정", ("인물 상태", "위치 판정"): "인물 위치 판정",
+    ("인물 이벤트", "실행 방식 2"): "인물 이벤트 실행", ("인물 이벤트", "실행 방식 3"): "인물 이벤트 실행 (보조)", ("인물 이벤트", "실행 모드 설정"): "이벤트 분류 설정",
+    ("조건 판정", "숨은 수치 확률"): "이벤트 조건 판정",
+    ("행 이동", "파트 오프셋"): "이벤트 내부 참조",
+    ("인물 상태", "이벤트 인물 참조 바인딩"): "인물 참조 설정", ("인물 상태", "런타임 상태 초기화"): "인물 상태 처리 1", ("인물 상태", "통역 고용/교체"): "인물 상태 처리 2", ("인물 상태", "상태 비트 02 설정"): "인물 상태 처리 3", ("인물 상태", "상태 비트 04 설정"): "인물 상태 처리 4", ("인물 상태", "상태 비트 04 해제"): "인물 상태 비트 해제", ("인물 상태", "선택 판정"): "인물 선택 판정", ("인물 상태", "위치 판정"): "인물 위치 판정",
+    ("인원", "투입 인원 절반"): "특수 상태 처리",
     ("소지금", "증가"): "소지금 증가", ("소지금", "감소"): "소지금 감소",
     ("소지금", "비교 분기"): "소지금 비교 분기",
     ("외부 분기", "STORY0.CDS"): "STORY0.CDS 외 분기", ("외부 분기", "STORY1.CDS"): "STORY1.CDS 외 분기",
@@ -306,12 +329,19 @@ BODY_KIND_TO_GROUP.update({
     "소지금 비교 분기": ("소지금", "비교 분기"),
     "STORY0.CDS 외 분기": ("외부 분기", "STORY0.CDS"),
     "STORY1.CDS 외 분기": ("외부 분기", "STORY1.CDS"),
-    "인물 상태 처리 1": ("인물 상태", "처리 1"),
-    "인물 상태 처리 2": ("인물 상태", "처리 2"),
-    "인물 상태 처리 3": ("인물 상태", "처리 3"),
-    "인물 참조 설정": ("인물 상태", "참조 설정"),
-    "인물 상태 처리 4": ("인물 상태", "처리 4"),
-    "인물 상태 비트 해제": ("인물 상태", "비트 해제"),
+    "인물 이벤트 실행": ("인물 이벤트", "실행 방식 2"),
+    "인물 이벤트 실행 (보조)": ("인물 이벤트", "실행 방식 3"),
+    "이벤트 분류 설정": ("인물 이벤트", "실행 모드 설정"),
+    "이벤트 조건 판정": ("조건 판정", "숨은 수치 확률"),
+    "이벤트 내부 참조": ("행 이동", "파트 오프셋"),
+    "내부 상태 설정": ("이벤트 상태", "값 2 설정"),
+    "특수 상태 처리": ("인원", "투입 인원 절반"),
+    "인물 상태 처리 1": ("인물 상태", "런타임 상태 초기화"),
+    "인물 상태 처리 2": ("인물 상태", "통역 고용/교체"),
+    "인물 상태 처리 3": ("인물 상태", "상태 비트 02 설정"),
+    "인물 참조 설정": ("인물 상태", "이벤트 인물 참조 바인딩"),
+    "인물 상태 처리 4": ("인물 상태", "상태 비트 04 설정"),
+    "인물 상태 비트 해제": ("인물 상태", "상태 비트 04 해제"),
     "인물 선택 판정": ("인물 상태", "선택 판정"),
     "인물 위치 판정": ("인물 상태", "위치 판정"),
 })
@@ -401,18 +431,26 @@ COMMAND_GUIDE = (
     ("본문", "미디어 | 동영상 | CG", "지정한 CG 애니메이션 번호를 재생합니다."),
     ("본문", "미디어 | 동영상 | AVI", "지정한 AVI 번호를 재생합니다."),
     ("본문", "특수 조우 연출 설정", "동물·자연현상·유령선 등 특수 조우 이벤트의 연출 종류를 지정합니다. 값별 세부 동작은 아직 실행 파일 추적이 필요합니다."),
-    ("본문", "특수 수치 판정", "유적·함정 이벤트에서 판정값과 난이도로 내부 결과를 설정합니다. 정확한 성공 산식은 실행 파일 추적이 필요하며, 뒤의 결과 참·거짓 이동 명령이 결과를 사용합니다."),
     ("본문", "해상 전투", "지정한 해상 조우 상대와 전투를 시작합니다. 결과 참·거짓 시 이동 명령으로 승패 경로를 처리합니다."),
-    ("본문", "이벤트 아이템 등록", "직전 획득한 아이템을 이벤트용으로 추가 등록합니다. 일반 아이템 획득 뒤에 같은 ID로 이어집니다."),
-    ("본문", "이벤트 아이템 처리", "아이템 ID를 대상으로 이벤트 전용 처리를 실행합니다. 일반 획득과 상위 연산이 다르며, 세부 동작은 실행 파일 추적이 필요합니다."),
-    ("본문", "인물 이벤트 실행", "인물 타입(ID) 기반의 이벤트 처리를 실행하고 결과를 후속 분기에서 사용합니다. 세부 동작은 실행 파일 추적이 필요합니다."),
-    ("본문", "인물 이벤트 실행 (보조)", "인물 타입(ID) 기반의 보조 이벤트 처리를 실행합니다. 기본 실행 명령과 상위 연산이 달라 별도 보존합니다."),
-    ("본문", "인물 상태 처리 1 / 2", "역사 인물 ID의 런타임 상태를 처리합니다. 처리 2는 현재 파일에서 처리 1 바로 앞에만 쓰입니다. 세부 상태 의미는 실행 파일 추적이 필요합니다."),
-    ("본문", "이벤트 분류 설정", "유적·민족·인물 이벤트에서 쓰는 내부 분류값을 지정합니다. 현재 확인된 값은 1~4이며 세부 의미는 실행 파일 추적이 필요합니다."),
+    ("본문", "이벤트 아이템 등록", "아이템 ID를 16칸 휴대 소지품 목록에 추가합니다. 발견물 보상 ID는 실행 시 이 목록에 넣지 않고 건너뜁니다."),
+    ("본문", "이벤트 아이템 처리", "아이템 ID에 해당하는 별도 이벤트 상태 항목을 처리 완료로 기록합니다. 소지품을 추가하거나 제거하지 않습니다."),
+    ("본문", "인물 이벤트 | 실행 방식 2", "인물 ID와 현재 실행 모드를 사용해 방식 2의 인물 이벤트를 실행하고, 결과를 후속 분기에 제공합니다."),
+    ("본문", "인물 이벤트 | 실행 방식 3", "별도 UI 경로인 방식 3으로 인물 이벤트를 실행하고, 결과를 후속 분기에 제공합니다."),
+    ("본문", "인물 상태 | 런타임 상태 초기화", "방식 1은 역사 인물 런타임 레코드의 이벤트 상태 필드를 초기화합니다."),
+    ("본문", "인물 상태 | 통역 고용·교체", "방식 2는 지정 인물을 통역으로 고용하거나 기존 통역을 교체합니다."),
+    ("본문", "인물 이벤트 | 실행 모드 설정", "이후 실행 방식 2 인물 이벤트가 사용할 실행 모드를 설정합니다."),
+    ("본문", "조건 판정 | 숨은 수치 확률", "숨은 수치 코드(현재 6·18·21·23 확인)를 대상으로 0~99 난수를 판정하고, 결과를 후속 분기에 제공합니다."),
+    ("본문", "행 이동 | 파트 오프셋", "현재 파트의 시작 위치를 기준으로 지정한 바이트 오프셋으로 즉시 이동합니다. 행 번호가 아니라 원본 파트 안의 오프셋입니다."),
+    ("본문", "이벤트 상태 | 값 2 설정", "지정한 이벤트 상태 레코드의 상태값을 2로 설정합니다."),
+    ("본문", "인원 | 투입 인원 절반", "현재 투입 인원(대원 또는 선원)을 올림하여 절반으로 설정합니다. 아래 원본 인수는 이 형식에 남아 있는 바이트 값입니다."),
+    ("본문", "인물 상태 | 이벤트 인물 참조 바인딩", "이벤트가 사용할 역사 인물 참조를 바인딩합니다."),
+    ("본문", "인물 상태 | 상태 비트 02 설정", "지정 인물 런타임 상태의 비트 02를 설정합니다."),
+    ("본문", "인물 상태 | 상태 비트 04 설정", "지정 인물 런타임 상태의 비트 04를 설정합니다."),
+    ("본문", "인물 상태 | 상태 비트 04 해제", "지정 인물 런타임 상태의 비트 04를 해제합니다."),
     ("본문", "이벤트 조건 판정", "지정한 내부 조건을 판정해 뒤의 결과 참·거짓 시 이동 명령에 결과를 제공합니다. 조건값의 세부 의미는 실행 파일 추적이 필요합니다."),
     ("본문", "이벤트 내부 참조", "선택지·분기·발견 처리 사이에서 사용하는 내부 참조값입니다. 고정 4바이트 형식은 확인됐지만 값의 세부 의미는 아직 미확인입니다."),
     ("본문", "주인공 성격 판정", "델포이 성지 이벤트에서 주인공의 성격을 판정·갱신한 뒤 보상 흐름으로 진행합니다."),
-    ("본문", "이벤트 판정", "지정한 판정 종류를 실행하고 결과를 설정합니다. 뒤의 결과 참·거짓 시 이동 명령이 결과를 사용합니다."),
+    ("본문", "미니게임", "성배·스핑크스·미궁·낚시·코인·발라몬의 탑·화살표 입방체 퍼즐을 실행합니다. 발라몬의 탑만 원반 수(4~7)를 지정합니다."),
     ("본문", "힌트 획득", "지정한 발견물 힌트를 활성화해 이후 힌트 조건과 발견 이벤트에서 사용할 수 있게 합니다."),
     ("본문", "대화창 | 숨김·표시", "2차 숨김 또는 표시를 선택해 대화창을 잠시 감추거나 다시 표시합니다."),
     ("본문", "결과 설정 | 참·거짓", "2차 참 또는 거짓을 선택해 직전 선택·조건의 결과를 강제로 설정합니다."),
@@ -439,6 +477,9 @@ COMMAND_GUIDE = (
     ("본문", "행 이동 | 상태값 | 상태값끼리 비교 | 대상·참조", "대상 상태값과 참조 상태값을 비교합니다. 비교가 거짓이면 지정한 행으로 이동합니다."),
     ("본문", "이벤트 결과 코드", "이벤트를 종료할지, 다음 단계를 진행할지, 반복 상태로 둘지를 지정합니다."),
 )
+
+# 이전 내부 이름으로 남아 있는 안내 항목은 실제 UI 분류와 중복되므로 표시하지 않는다.
+HIDDEN_COMMAND_GUIDES = frozenset(("이벤트 조건 판정", "이벤트 내부 참조"))
 
 # 19/1A/22/26 1C 명령의 대상 번호.  "능력치"라는 옛 표기는 함대 상태,
 # 소지금, 함선 내구도까지 함께 다루는 실제 동작을 설명하지 못하므로 상태값으로 통일한다.
@@ -765,6 +806,10 @@ def verify_archive(data: bytes, expected_parts: list[bytes]) -> None:
 
 
 class DisevEditor:
+    # 기본 창 폭(1180px)에서 약 1/5가 되도록 발견물 목록은 고정 폭으로 둔다.
+    # 창을 넓힐 때 추가 폭은 오른쪽 편집 영역에만 배분한다.
+    DISCOVERY_PANEL_WIDTH = 240
+
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title(APP_TITLE)
@@ -794,6 +839,8 @@ class DisevEditor:
         self._update_notice = self._consume_update_notice()
         self.filter_after: str | None = None
         self.discovery_column_fit_after: str | None = None
+        self.condition_action_var = tk.StringVar(value=ui("edit"))
+        self.condition_insert_row_var = tk.StringVar()
         self.condition_kind_var = tk.StringVar(value="항상 실행")
         self.condition_subkind_var = tk.StringVar()
         self.condition_value_vars = (tk.StringVar(value="0"), tk.StringVar(value="0"))
@@ -812,6 +859,8 @@ class DisevEditor:
         self.selected_condition_index: int | None = None
         self.body_tokens: list[dict[str, object]] = []
         self.selected_body_index: int | None = None
+        self.body_action_var = tk.StringVar(value=ui("edit"))
+        self.body_insert_row_var = tk.StringVar()
         self.body_command_var = tk.StringVar(value="-")
         self.body_subkind_var = tk.StringVar()
         self.body_detail_var = tk.StringVar()
@@ -846,10 +895,12 @@ class DisevEditor:
         self._configure_styles()
         self._build_ui()
         for combo in (
+            self.condition_action_combo,
             self.condition_kind_combo,
             self.condition_subkind_combo,
             self.condition_target_combo,
             self.body_kind_combo,
+            self.body_action_combo,
             self.body_subkind_combo,
             self.body_detail_combo,
             self.body_fourth_combo,
@@ -935,24 +986,13 @@ class DisevEditor:
                     widest = max(widest, value_font.measure(str(values[index])))
             tree.column(column, width=max(36, widest + 22), stretch=False)
 
-    def _autosize_discovery_tree_and_panel(self) -> None:
-        """두 발견물 열의 내용 폭을 고정하고, 그 합계에 맞춰 왼쪽 패널을 조정한다."""
+    def _fit_discovery_tree_to_panel(self) -> None:
+        """문자열 길이와 무관하게 발견물 목록을 고정 패널 폭에 맞춘다."""
         if not self.tree.winfo_exists():
             return
-        self._autosize_tree_columns(self.tree)
-        # 우선 내용 폭으로 왼쪽 패널의 기준 폭을 정한다. 실제 배치 폭은 아래의
-        # _fit_discovery_columns_to_tree_width()에서 한 번 더 맞춘다.
-        for column in self.tree.cget("columns"):
-            width = int(self.tree.column(column, "width"))
-            self.tree.column(column, width=width, minwidth=width, stretch=False)
-        required = sum(int(self.tree.column(column, "width")) for column in self.tree.cget("columns"))
-        # 좌우 프레임 padding·세로 스크롤바·Treeview 테두리까지 포함한다.
-        required += 38
-        available = max(240, self.root.winfo_width() - 480)
-        try:
-            self.main_pane.sashpos(0, min(max(180, required), available))
-        except tk.TclError:
-            pass
+        # ID 열은 항상 같은 폭을 쓰고, 이름 열만 남은 표시 폭을 채운다.
+        # 항목 텍스트를 측정해 열 폭을 변경하지 않는다.
+        self.tree.column("discovery_id", width=52, minwidth=52, stretch=False)
         self._schedule_discovery_column_fit()
 
     def _schedule_discovery_column_fit(self, _event=None) -> None:
@@ -1055,8 +1095,8 @@ class DisevEditor:
 
         left = ttk.Frame(pane, padding=5)
         right = ttk.Frame(pane, padding=5)
-        pane.add(left, weight=3)
-        pane.add(right, weight=5)
+        pane.add(left, weight=0)
+        pane.add(right, weight=1)
 
         search_row = ttk.Frame(left)
         search_row.pack(fill="x", pady=(0, 5))
@@ -1106,8 +1146,31 @@ class DisevEditor:
         chunks.add(condition_frame, weight=0)
         chunks.add(body_frame, weight=1)
 
+        condition_action_row = ttk.Frame(condition_frame)
+        condition_action_row.pack(fill="x", padx=2, pady=(2, 6))
+        ttk.Label(condition_action_row, text=ui("operation")).pack(side="left")
+        self.condition_action_combo = ttk.Combobox(
+            condition_action_row,
+            textvariable=self.condition_action_var,
+            values=(ui("edit"), ui("add"), ui("insert"), ui("remove"), ui("clear_all")),
+            state="readonly",
+            width=10,
+        )
+        self.condition_action_combo.pack(side="left", padx=(5, 6))
+        self.condition_action_combo.bind("<<ComboboxSelected>>", self._condition_action_changed)
+        self.condition_insert_row_label = ttk.Label(condition_action_row, text=ui("insert_row"))
+        self.condition_insert_row_entry = ttk.Entry(
+            condition_action_row, textvariable=self.condition_insert_row_var, width=6,
+        )
+        self.condition_apply_button = ttk.Button(
+            condition_action_row, text=ui("apply_operation"), command=self._run_condition_action,
+        )
+        self.condition_apply_button.pack(side="left")
+        self.condition_insert_row_label.pack_forget()
+        self.condition_insert_row_entry.pack_forget()
+
         condition_builder = ttk.Frame(condition_frame)
-        condition_builder.pack(fill="x", padx=2, pady=(2, 6))
+        condition_builder.pack(fill="x", padx=2, pady=(0, 6))
         ttk.Label(condition_builder, text=ui("first_level")).grid(row=0, column=0, sticky="e")
         self.condition_kind_combo = ttk.Combobox(
             condition_builder,
@@ -1143,18 +1206,6 @@ class DisevEditor:
             width=31,
         )
         self.condition_summary_var = tk.StringVar(value=ui("always_execute"))
-        action_row = ttk.Frame(condition_builder)
-        action_row.grid(row=1, column=0, columnspan=10, sticky="w", pady=(7, 0))
-        self.condition_edit_button = ttk.Button(action_row, text=ui("edit"), command=self._apply_condition_token)
-        self.condition_edit_button.pack(side="left")
-        self.condition_add_button = ttk.Button(action_row, text=ui("add"), command=self._add_condition_token)
-        self.condition_add_button.pack(side="left", padx=(6, 0))
-        self.condition_insert_button = ttk.Button(action_row, text=ui("insert"), command=self._insert_condition_token)
-        self.condition_insert_button.pack(side="left", padx=(6, 0))
-        self.condition_remove_button = ttk.Button(action_row, text=ui("remove"), command=self._remove_selected_condition)
-        self.condition_remove_button.pack(side="left", padx=(6, 0))
-        self.condition_clear_button = ttk.Button(action_row, text=ui("clear_all"), command=self._clear_conditions)
-        self.condition_clear_button.pack(side="left", padx=(6, 0))
         condition_builder.columnconfigure(7, weight=1)
         self._condition_kind_changed()
 
@@ -1182,6 +1233,9 @@ class DisevEditor:
         ttk.Label(status_frame, textvariable=self.dirty_var).pack(side="right")
 
         self._set_edit_state(False)
+        # 기본 작업이 '수정'이므로, 콤보를 직접 바꾸지 않아도 행 입력칸을 보인다.
+        self._condition_action_changed()
+        self._body_action_changed()
 
     def _make_command_guide(self, parent: ttk.Frame) -> None:
         """조건·본문 명령의 실행 의미를 별도 목록으로 보여 준다."""
@@ -1217,7 +1271,7 @@ class DisevEditor:
         tree = self.command_guide_tree
         tree.delete(*tree.get_children())
         for index, row in enumerate(COMMAND_GUIDE):
-            if selected != "전체" and row[0] != selected:
+            if row[1] in HIDDEN_COMMAND_GUIDES or (selected != "전체" and row[0] != selected):
                 continue
             tree.insert("", "end", iid=f"guide-{index}", values=row)
 
@@ -1282,16 +1336,41 @@ class DisevEditor:
     def _make_body_list(self, parent: ttk.Frame) -> ttk.Treeview:
         frame = ttk.Frame(parent)
         frame.pack(fill="both", expand=True)
+        self.body_action_row = ttk.Frame(frame)
+        self.body_action_row.pack(fill="x", pady=(0, 6))
+        ttk.Label(self.body_action_row, text=ui("operation")).pack(side="left")
+        self.body_action_combo = ttk.Combobox(
+            self.body_action_row,
+            textvariable=self.body_action_var,
+            values=(ui("edit"), ui("add"), ui("insert"), ui("remove")),
+            state="readonly",
+            width=10,
+        )
+        self.body_action_combo.pack(side="left", padx=(5, 6))
+        self.body_action_combo.bind("<<ComboboxSelected>>", self._body_action_changed)
+        self.body_insert_row_label = ttk.Label(self.body_action_row, text=ui("insert_row"))
+        self.body_insert_row_entry = ttk.Entry(
+            self.body_action_row, textvariable=self.body_insert_row_var, width=6,
+        )
+        self.body_apply_button = ttk.Button(
+            self.body_action_row, text=ui("apply_operation"), command=self._run_body_action,
+        )
+        self.body_apply_button.pack(side="left")
+        self.body_insert_row_label.pack_forget()
+        self.body_insert_row_entry.pack_forget()
         editor = ttk.Frame(frame)
         editor.pack(fill="x", pady=(0, 6))
+        editor.columnconfigure(0, weight=1)
         # 분류 행은 입력 행과 분리한다. 아래의 가변 입력폭이 분류 콤보 간격에 영향을 주지 않는다.
         classification_row = ttk.Frame(editor)
         classification_row.grid(row=0, column=0, columnspan=11, sticky="w")
+        self.body_classification_row = classification_row
+        # 명령별 보조 조건/선택기는 모두 이 분류 행에 추가한다.
+        self.body_auxiliary_row = ttk.Frame(editor)
+        self.body_classification_controls: list[tk.Widget] = []
         self.body_input_row = ttk.Frame(editor)
         self.body_input_row.grid(row=1, column=0, columnspan=11, sticky="ew", pady=(4, 0))
         self.body_input_row.columnconfigure(1, weight=1)
-        self.body_input_row.columnconfigure(3, weight=1)
-        self.body_input_row.columnconfigure(5, weight=1)
         ttk.Label(classification_row, text="1차:").grid(row=0, column=0, sticky="w")
         self.body_kind_combo = ttk.Combobox(classification_row, textvariable=self.body_command_var, values=tuple(BODY_COMMAND_GROUPS), state="readonly", width=22)
         self.body_kind_combo.grid(row=0, column=1, sticky="w", padx=(5, 10))
@@ -1385,16 +1464,6 @@ class DisevEditor:
             editor, textvariable=self.body_hint_var,
             values=tuple(name for _hint_id, name in self.hint_targets), state="readonly", width=14,
         )
-        self.body_action_row = ttk.Frame(editor)
-        self.body_action_row.grid(row=2, column=0, columnspan=11, sticky="w", pady=(6, 0))
-        self.body_edit_button = ttk.Button(self.body_action_row, text="수정", command=self._apply_body_command)
-        self.body_edit_button.pack(side="left")
-        self.body_add_button = ttk.Button(self.body_action_row, text="추가", command=self._add_body_command)
-        self.body_add_button.pack(side="left", padx=(6, 0))
-        self.body_insert_button = ttk.Button(self.body_action_row, text="삽입", command=self._insert_body_command)
-        self.body_insert_button.pack(side="left", padx=(6, 0))
-        self.body_remove_button = ttk.Button(self.body_action_row, text="제거", command=self._remove_body_command)
-        self.body_remove_button.pack(side="left", padx=(6, 0))
         # 상태값 명령에서는 _body_kind_changed가 수치 입력 열에만 남는 폭을 준다.
         editor.columnconfigure(3, weight=0)
         editor.columnconfigure(5, weight=0)
@@ -1426,7 +1495,8 @@ class DisevEditor:
         self.special_difficulty_entry.grid_remove()
         self.body_value_entry.configure(state="disabled")
         self.body_value2_entry.configure(state="disabled")
-        self.body_edit_button.configure(state="disabled")
+        self.body_action_combo.configure(state="disabled")
+        self.body_apply_button.configure(state="disabled")
 
         list_frame = ttk.Frame(frame)
         list_frame.pack(fill="both", expand=True)
@@ -1497,10 +1567,9 @@ class DisevEditor:
         x = max(0, (self.root.winfo_screenwidth() - width) // 2)
         y = max(0, (self.root.winfo_screenheight() - height) // 2)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
-        # Panedwindow의 weight는 초기 분할선 위치에 영향을 주지 않는다.
-        # 검색 패널이 충분히 넓게 열리도록 첫 번째 sash를 직접 배치한다.
+        # 좌측 발견물 목록은 기본 창의 약 1/5 폭으로 고정한다.
         try:
-            self.main_pane.sashpos(0, 370)
+            self.main_pane.sashpos(0, self.DISCOVERY_PANEL_WIDTH)
         except tk.TclError:
             pass
 
@@ -1518,14 +1587,137 @@ class DisevEditor:
         state = "normal" if enabled else "disabled"
         self.condition_kind_combo.configure(state="readonly" if enabled else "disabled")
         self.condition_subkind_combo.configure(state="readonly" if enabled and CONDITION_GROUPS.get(self.condition_kind_var.get()) else "disabled")
-        self.condition_edit_button.configure(state=state)
-        self.condition_add_button.configure(state=state)
-        self.condition_insert_button.configure(state=state)
-        self.condition_remove_button.configure(state=state)
-        self.condition_clear_button.configure(state=state)
+        self.condition_action_combo.configure(state="readonly" if enabled else "disabled")
+        self.condition_apply_button.configure(state=state)
+        self.condition_insert_row_entry.configure(state=state)
         for spin in self.condition_value_spins:
             spin.configure(state=state)
         self.condition_target_combo.configure(state="readonly" if enabled else "disabled")
+
+    def _condition_action_changed(self, _event=None) -> None:
+        """추가·전체 비우기 외의 작업에서는 대상 조건 행을 받는다."""
+        action = self.condition_action_var.get()
+        show_row = action in (ui("edit"), ui("insert"), ui("remove"))
+        if show_row:
+            self.condition_insert_row_label.pack(
+                side="left", padx=(5, 2), before=self.condition_apply_button,
+            )
+            self.condition_insert_row_entry.pack(
+                side="left", padx=(0, 6), before=self.condition_apply_button,
+            )
+        else:
+            self.condition_insert_row_label.pack_forget()
+            self.condition_insert_row_entry.pack_forget()
+        if action in (ui("edit"), ui("remove")) and self.selected_condition_index is not None:
+            self.condition_insert_row_var.set(str(self.selected_condition_index + 1))
+
+    def _body_action_changed(self, _event=None) -> None:
+        """추가 외의 작업에서는 대상 본문 행을 받는다."""
+        action = self.body_action_var.get()
+        show_row = action in (ui("edit"), ui("insert"), ui("remove"))
+        if show_row:
+            self.body_insert_row_label.pack(
+                side="left", padx=(5, 2), before=self.body_apply_button,
+            )
+            self.body_insert_row_entry.pack(
+                side="left", padx=(0, 6), before=self.body_apply_button,
+            )
+        else:
+            self.body_insert_row_label.pack_forget()
+            self.body_insert_row_entry.pack_forget()
+        if action in (ui("edit"), ui("remove")) and self.selected_body_index is not None:
+            self.body_insert_row_var.set(str(self.selected_body_index + 1))
+
+    def _insert_row_index(self, value: str, item_count: int, label: str, title: str) -> int | None:
+        """사용자가 입력한 1부터 시작하는 행 번호를 삽입 위치로 변환한다."""
+        try:
+            row = int(value.strip())
+        except ValueError:
+            row = 0
+        maximum = item_count + 1
+        if not 1 <= row <= maximum:
+            messagebox.showerror(
+                title,
+                f"삽입할 {label} 행 번호는 1~{maximum} 범위로 입력하세요.",
+                parent=self.root,
+            )
+            return None
+        return row - 1
+
+    def _existing_row_index(self, value: str, item_count: int, label: str, title: str) -> int | None:
+        """수정·제거할 기존 행 번호를 0부터 시작하는 인덱스로 변환한다."""
+        try:
+            row = int(value.strip())
+        except ValueError:
+            row = 0
+        if not 1 <= row <= item_count:
+            messagebox.showerror(
+                title,
+                f"대상 {label} 행 번호는 1~{item_count} 범위로 입력하세요.",
+                parent=self.root,
+            )
+            return None
+        return row - 1
+
+    def _run_condition_action(self) -> None:
+        action = self.condition_action_var.get()
+        if action == ui("edit"):
+            count = len(self.condition_tokens) if self.condition_tokens is not None else 0
+            index = self._existing_row_index(
+                self.condition_insert_row_var.get(), count, "조건", ui("condition_edit_failed"),
+            )
+            if index is not None:
+                self._apply_condition_token(index)
+        elif action == ui("add"):
+            self._add_condition_token()
+        elif action == ui("insert"):
+            count = len(self.condition_tokens) if self.condition_tokens is not None else 0
+            index = self._insert_row_index(
+                self.condition_insert_row_var.get(), count, "조건", ui("condition_insert_failed"),
+            )
+            if index is not None:
+                self._insert_condition_token(index)
+        elif action == ui("remove"):
+            count = len(self.condition_tokens) if self.condition_tokens is not None else 0
+            index = self._existing_row_index(
+                self.condition_insert_row_var.get(), count, "조건", ui("condition_remove_failed"),
+            )
+            if index is not None:
+                self._remove_selected_condition(index)
+        elif action == ui("clear_all"):
+            self._clear_conditions()
+
+    def _run_body_action(self) -> None:
+        action = self.body_action_var.get()
+        if action == ui("edit"):
+            count = len(self.body_tokens)
+            if count and self.body_tokens[-1].get("kind") == "본문 끝":
+                count -= 1
+            index = self._existing_row_index(
+                self.body_insert_row_var.get(), count, "본문", ui("body_edit_failed"),
+            )
+            if index is not None:
+                self._apply_body_command(index)
+        elif action == ui("add"):
+            self._add_body_command()
+        elif action == ui("insert"):
+            count = len(self.body_tokens)
+            if count and self.body_tokens[-1].get("kind") == "본문 끝":
+                count -= 1
+            index = self._insert_row_index(
+                self.body_insert_row_var.get(), count, "본문", ui("body_insert_failed"),
+            )
+            if index is not None:
+                self._insert_body_command(index)
+        elif action == ui("remove"):
+            count = len(self.body_tokens)
+            if count and self.body_tokens[-1].get("kind") == "본문 끝":
+                count -= 1
+            index = self._existing_row_index(
+                self.body_insert_row_var.get(), count, "본문", ui("body_remove_failed"),
+            )
+            if index is not None:
+                self._remove_body_command(index)
 
     @staticmethod
     def _resource_data_dir() -> Path:
@@ -1916,6 +2108,8 @@ class DisevEditor:
         if not 0 <= index < len(self.condition_tokens):
             return
         self.selected_condition_index = index
+        if self.condition_action_var.get() in (ui("edit"), ui("remove")):
+            self.condition_insert_row_var.set(str(index + 1))
         kind, values = self.condition_tokens[index]
         group, subkind = CONDITION_KIND_TO_GROUP.get(kind, (kind, ""))
         self.condition_kind_var.set(group)
@@ -1939,10 +2133,19 @@ class DisevEditor:
         if not 0 <= index < len(self.body_tokens):
             return
         self.selected_body_index = index
+        if self.body_action_var.get() in (ui("edit"), ui("remove")):
+            self.body_insert_row_var.set(str(index + 1))
         token = self.body_tokens[index]
         kind = str(token["kind"])
         value = token.get("value")
-        group, subkind = BODY_KIND_TO_GROUP.get(kind, (kind, ""))
+        if kind == "이벤트 판정":
+            group = "미니게임"
+            subkind = MINIGAME_SUBKIND_BY_TYPE.get(int(value), "") if value is not None else ""
+        elif kind == "특수 수치 판정":
+            group = "미니게임"
+            subkind = MINIGAME_SUBKIND_BY_TYPE.get(int(token.get("difficulty", -1)), "")
+        else:
+            group, subkind = BODY_KIND_TO_GROUP.get(kind, (kind, ""))
         self.body_command_var.set(group if group in BODY_COMMAND_GROUPS else "")
         self.body_subkind_var.set(subkind)
         self.body_detail_var.set(BODY_KIND_TO_DETAIL.get(kind, ""))
@@ -2063,7 +2266,6 @@ class DisevEditor:
         self.body_stat_target_combo.configure(state="readonly" if editable and kind in STAT_COMMAND_KINDS + NUMERIC_COMPARE_BRANCH_KINDS else "disabled")
         self.body_hint_state_combo.configure(state="readonly" if editable and kind == HINT_BRANCH_KIND else "disabled")
         self.body_hint_combo.configure(state="readonly" if editable and kind in (HINT_BRANCH_KIND, "힌트 획득") else "disabled")
-        self.body_edit_button.configure(state="normal" if editable else "disabled")
         self.status_var.set(ui("status_body_selected", index + 1))
 
     def _body_kind_changed(self, _event=None) -> None:
@@ -2107,6 +2309,21 @@ class DisevEditor:
             kind = MOVE_DETAIL_TO_KIND[(self.body_subkind_var.get(), self.body_detail_var.get())]
         else:
             kind = BODY_GROUP_TO_KIND.get((group, self.body_subkind_var.get()), BODY_GROUP_TO_KIND.get((group, ""), group))
+        if group == "미니게임":
+            minigame_type = MINIGAME_TYPE_BY_SUBKIND.get(self.body_subkind_var.get())
+            if minigame_type in MINIGAME_EVENT_TYPES:
+                # 0E 04는 종류값만 받는다. 아래 값 입력칸은 쓰지 않는다.
+                self.body_value_var.set(str(minigame_type))
+            elif minigame_type == 4:
+                # 천칭 퍼즐의 u32 값은 이 게임 버전에서 읽지 않는다.
+                if self.special_difficulty_var.get() != "4":
+                    self.special_check_value_var.set("0")
+                self.special_difficulty_var.set("4")
+            elif minigame_type == 5:
+                # 하노이의 탑만 원반 수를 u32 매개값으로 사용한다.
+                if self.special_difficulty_var.get() != "5":
+                    self.special_check_value_var.set("4")
+                self.special_difficulty_var.set("5")
         # 2B 형식은 무작위 기준값만 지원하므로 선택 즉시 범위 입력을 켠다.
         if kind == STATE_GREATER_RANDOM_BRANCH_KIND:
             self.body_random_var.set(True)
@@ -2157,7 +2374,6 @@ class DisevEditor:
             self.body_detail_label.configure(text="화자:")
             self.body_detail_label.grid(row=0, column=4, sticky="w")
             self.body_speaker_combo.grid(row=0, column=5, sticky="w", padx=(5, 10))
-        self.body_action_row.grid_configure(row=1)
         # 대상 콤보는 고정하고, 상태값의 두 수치 칸만 남는 폭을 균등하게 확장한다.
         self.body_value_entry.master.columnconfigure(3, weight=0)
         self.body_value_entry.master.columnconfigure(3, weight=1 if is_date_passage else 0, uniform="range_values" if is_date_passage else "")
@@ -2352,12 +2568,22 @@ class DisevEditor:
     def _rebuild_body_command_controls(
         self, kind: str, group: str, subkinds: tuple[str, ...], detail_kinds: tuple[str, ...],
     ) -> None:
-        """Create only the final command's own controls; never reuse a shared input row."""
-        for child in self.body_input_row.winfo_children():
-            child.destroy()
+        """Place command parameters above, and keep the lower row to one final value."""
+        for widget in self.body_classification_controls:
+            widget.destroy()
+        self.body_classification_controls.clear()
+        for row in (self.body_auxiliary_row, self.body_input_row):
+            for child in row.winfo_children():
+                child.destroy()
+        self.body_auxiliary_row.grid_remove()
 
         # 분류행: 마지막 분류가 정해진 뒤에만 그에 맞는 선택기를 표시한다.
-        for widget in (self.body_subkind_label, self.body_subkind_combo, self.body_detail_label, self.body_detail_combo, self.body_fourth_label, self.body_fourth_combo, self.body_speaker_label, self.body_speaker_combo):
+        for widget in (
+            self.body_subkind_label, self.body_subkind_combo,
+            self.body_detail_label, self.body_detail_combo,
+            self.body_fourth_label, self.body_fourth_combo,
+            self.body_speaker_label, self.body_speaker_combo,
+        ):
             widget.grid_remove()
         if subkinds:
             self.body_subkind_label.grid(row=0, column=2, sticky="w")
@@ -2366,259 +2592,249 @@ class DisevEditor:
             self.body_detail_label.configure(text="3차:")
             self.body_detail_label.grid(row=0, column=4, sticky="w")
             self.body_detail_combo.grid(row=0, column=5, sticky="w", padx=(5, 10))
-            if group == "행 이동" and self.body_subkind_var.get() == "힌트 상태":
-                self.body_fourth_label.grid(row=0, column=6, sticky="w")
-                self.body_fourth_label.configure(text="4차:")
-                self.body_fourth_combo.configure(
-                    textvariable=self.body_hint_var,
-                    values=tuple(
-                        self._body_target_display(hint_id, name)
-                        for hint_id, name in self.hint_targets if hint_id >= 0
-                    )
-                )
-                self.body_fourth_combo.grid(row=0, column=7, sticky="w", padx=(5, 10))
-            elif group == "행 이동" and self.body_subkind_var.get() == "상태값":
-                self.body_fourth_label.grid(row=0, column=6, sticky="w")
-                self.body_fourth_label.configure(text="4차:")
-                self.body_fourth_combo.configure(
-                    textvariable=self.body_stat_target_var,
-                    values=tuple(name for _target_id, name in STAT_TARGETS),
-                )
-                self.body_fourth_combo.grid(row=0, column=7, sticky="w", padx=(5, 10))
-            elif group == "행 이동" and self.body_subkind_var.get() == "아이템 상태":
-                self.body_fourth_label.grid(row=0, column=6, sticky="w")
-                self.body_fourth_label.configure(text="4차:")
-                self.body_fourth_combo.configure(
-                    textvariable=self.body_item_var,
-                    values=tuple(self._body_target_display(item_id, name) for item_id, name in self.item_targets),
-                )
-                self.body_fourth_combo.grid(row=0, column=7, sticky="w", padx=(5, 10))
-                if not self.body_item_var.get() and self.item_targets:
-                    self._set_body_item(self.item_targets[0][0])
-            elif group == "행 이동" and self.body_subkind_var.get() == "발견물":
-                self.body_fourth_label.grid(row=0, column=6, sticky="w")
-                self.body_fourth_label.configure(text="4차:")
-                self.body_fourth_combo.configure(
-                    textvariable=self.body_character_var,
-                    values=tuple(
-                        self._body_target_display(discovery_id, name)
-                        for discovery_id, name in self.discovery_targets
-                    ),
-                    state="readonly",
-                )
-                self.body_fourth_combo.grid(row=0, column=7, sticky="w", padx=(5, 10))
-                if not self.body_character_var.get() and self.discovery_targets:
-                    self._set_body_character(self.discovery_targets[0][0])
-            elif group == "행 이동" and self.body_subkind_var.get() == "NPC 조건":
-                is_sponsor = self.body_detail_var.get() == "후원자"
-                targets = self.sponsor_targets if is_sponsor else self.character_targets
-                self.body_fourth_label.grid(row=0, column=6, sticky="w")
-                self.body_fourth_label.configure(text="4차:")
-                self.body_fourth_combo.configure(
-                    textvariable=self.body_character_var,
-                    values=tuple(self._body_target_display(target_id, name) for target_id, name in targets),
-                )
-                self.body_fourth_combo.grid(row=0, column=7, sticky="w", padx=(5, 10))
         elif kind in DIALOGUE_KINDS:
             self.body_detail_label.configure(text="화자:")
             self.body_detail_label.grid(row=0, column=4, sticky="w")
             self.body_speaker_combo.configure(state="readonly")
             self.body_speaker_combo.grid(row=0, column=5, sticky="w", padx=(5, 10))
 
-        row = self.body_input_row
+        aux = self.body_classification_row
+        value_row = self.body_input_row
+        auxiliary_column = 6
 
-        def label(column: int, text: str) -> None:
-            ttk.Label(row, text=text).grid(row=0, column=column, sticky="e")
+        def aux_label(column: int, text: str) -> None:
+            widget = ttk.Label(aux, text=text)
+            widget.grid(row=0, column=auxiliary_column + column, sticky="e")
+            self.body_classification_controls.append(widget)
 
-        def entry(column: int, variable: tk.StringVar, span: int = 1) -> None:
-            text_entry = kind in DIALOGUE_KINDS or kind == "발견물 이름 설정"
-            NativeEdit(
-                row,
-                variable,
-                width=170 if span == 1 else 360,
-                numeric=not text_entry,
-                allow_negative=kind == "상태값 증감",
-            ).grid(
-                row=0, column=column, columnspan=span, sticky="ew", padx=(5, 10 if span == 1 else 0),
+        def aux_entry(column: int, variable: tk.StringVar, *, allow_negative: bool = False) -> None:
+            widget = NativeEdit(aux, variable, width=130, numeric=True, allow_negative=allow_negative)
+            widget.grid(
+                row=0, column=auxiliary_column + column, sticky="w", padx=(5, 12),
             )
+            self.body_classification_controls.append(widget.host)
 
-        def combo(column: int, textvariable: tk.StringVar, values: tuple[str, ...], span: int = 1, maximum: int | None = None) -> None:
-            widget = ttk.Combobox(row, textvariable=textvariable, values=values, state="readonly")
-            widget.grid(row=0, column=column, columnspan=span, sticky="ew", padx=(5, 10 if span == 1 else 0))
+        def aux_combo(
+            column: int, textvariable: tk.StringVar, values: tuple[str, ...], *, maximum: int | None = None,
+        ) -> None:
+            widget = ttk.Combobox(aux, textvariable=textvariable, values=values, state="readonly")
+            widget.grid(row=0, column=auxiliary_column + column, sticky="w", padx=(5, 12))
             widget.bind("<Up>", self._cycle_combobox)
             widget.bind("<Down>", self._cycle_combobox)
             self._autosize_combobox(widget, maximum=maximum)
+            self.body_classification_controls.append(widget)
 
-        # 1~3차 분류가 실제 명령으로 확정되기 전에는 입력 컨트롤을 만들지 않는다.
-        # 이 규칙 때문에 이전 명령의 값/체크박스가 다음 명령 화면에 남지 않는다.
+        def final_value(text: str, variable: tk.StringVar, *, text_entry: bool = False, allow_negative: bool = False) -> None:
+            """The only control allowed in the lower row: a full-width final value."""
+            ttk.Label(value_row, text=text).grid(row=0, column=0, sticky="e")
+            NativeEdit(
+                value_row, variable, width=520, numeric=not text_entry, allow_negative=allow_negative,
+            ).grid(row=0, column=1, sticky="ew", padx=(5, 0))
+
+        # 1~3차 분류가 실제 명령으로 확정되기 전에는 이전 명령의 입력을 남기지 않는다.
         if kind not in BODY_COMMAND_KINDS:
             return
 
-        no_input = {"음원 정지", "이미지 표시 종료", "대화창 숨김", "대화창 표시", "결과 거짓 설정", "결과 참 설정", "주인공 성격 판정"}
+        no_input = {
+            "음원 정지", "이미지 표시 종료", "대화창 숨김", "대화창 표시",
+            "결과 거짓 설정", "결과 참 설정", "주인공 성격 판정",
+        }
         if kind in no_input:
             return
-        if kind == "특수 수치 판정":
-            label(0, "판정값:")
-            entry(1, self.special_check_value_var)
-            label(2, "난이도:")
-            entry(3, self.special_difficulty_var)
+
+        # 행 이동의 세부 조건은 모두 위의 보조/분류 영역에 둔다.
+        if group == "행 이동" and self.body_subkind_var.get() == "힌트 상태":
+            aux_label(0, "4차:")
+            aux_combo(1, self.body_hint_var, tuple(
+                self._body_target_display(hint_id, name)
+                for hint_id, name in self.hint_targets if hint_id >= 0
+            ))
+        elif group == "행 이동" and self.body_subkind_var.get() == "상태값":
+            aux_label(0, "4차:")
+            aux_combo(1, self.body_stat_target_var, tuple(name for _target_id, name in STAT_TARGETS))
+        elif group == "행 이동" and self.body_subkind_var.get() == "아이템 상태":
+            aux_label(0, "4차:")
+            aux_combo(1, self.body_item_var, tuple(
+                self._body_target_display(item_id, name) for item_id, name in self.item_targets
+            ), maximum=16)
+            if not self.body_item_var.get() and self.item_targets:
+                self._set_body_item(self.item_targets[0][0])
+        elif group == "행 이동" and self.body_subkind_var.get() == "발견물":
+            aux_label(0, "4차:")
+            aux_combo(1, self.body_character_var, tuple(
+                self._body_target_display(discovery_id, name) for discovery_id, name in self.discovery_targets
+            ))
+            if not self.body_character_var.get() and self.discovery_targets:
+                self._set_body_character(self.discovery_targets[0][0])
+        elif group == "행 이동" and self.body_subkind_var.get() == "NPC 조건":
+            targets = self.sponsor_targets if self.body_detail_var.get() == "후원자" else self.character_targets
+            aux_label(0, "4차:")
+            aux_combo(1, self.body_character_var, tuple(
+                self._body_target_display(target_id, name) for target_id, name in targets
+            ))
+
+        if group == "미니게임":
+            if MINIGAME_TYPE_BY_SUBKIND.get(self.body_subkind_var.get()) == 5:
+                final_value("원반 수:", self.special_check_value_var)
             return
         if kind in DIALOGUE_KINDS:
-            label(0, "대사:")
-            entry(1, self.body_value_var, 5)
             if kind == "대상 지정 대사":
-                label(6, "대상 인물:")
-                combo(7, self.body_character_var, tuple(
+                aux_label(2, "대상 인물:")
+                aux_combo(3, self.body_character_var, tuple(
                     self._body_target_display(character_id, name)
                     for character_id, name in self.character_targets
-                ), 2)
+                ))
+            final_value("대사:", self.body_value_var, text_entry=True)
             return
         if kind == "발견물 이름 설정":
-            label(0, "대상 발견물:")
-            combo(1, self.body_character_var, tuple(self._body_target_display(discovery_id, name) for discovery_id, name in self.discovery_targets), 2)
-            label(3, "이름:")
-            entry(4, self.body_value_var)
+            aux_label(0, "대상 발견물:")
+            aux_combo(1, self.body_character_var, tuple(
+                self._body_target_display(discovery_id, name) for discovery_id, name in self.discovery_targets
+            ))
+            final_value("이름:", self.body_value_var, text_entry=True)
             return
         if kind in CHARACTER_TARGET_COMMAND_KINDS:
-            label(0, "인물:")
-            combo(1, self.body_character_var, tuple(
-                self._body_target_display(character_id, name)
-                for character_id, name in self.character_targets
-            ), 3)
+            aux_label(0, "인물:")
+            aux_combo(1, self.body_character_var, tuple(
+                self._body_target_display(character_id, name) for character_id, name in self.character_targets
+            ))
             if kind == "인물 상태 비트 해제":
-                label(4, "비트 번호:")
-                entry(5, self.body_value_var)
+                final_value("비트 번호:", self.body_value_var)
             return
         if kind in ("아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리"):
-            label(0, "아이템:")
-            combo(1, self.body_item_var, tuple(self._body_target_display(item_id, name) for item_id, name in self.item_targets), 3, maximum=16)
+            aux_label(0, "아이템:")
+            aux_combo(1, self.body_item_var, tuple(
+                self._body_target_display(item_id, name) for item_id, name in self.item_targets
+            ), maximum=16)
             return
         if kind == "신도시 생성":
-            label(0, "도시:")
-            combo(1, self.body_city_var, tuple(self._body_target_display(city_id, name) for city_id, name in self.city_targets), 3)
+            aux_label(0, "도시:")
+            aux_combo(1, self.body_city_var, tuple(
+                self._body_target_display(city_id, name) for city_id, name in self.city_targets
+            ))
             return
         if kind == "발견물 등록/발견 처리":
-            label(0, "발견물:")
-            combo(1, self.body_character_var, tuple(self._body_target_display(discovery_id, name) for discovery_id, name in self.discovery_targets), 3)
+            aux_label(0, "발견물:")
+            aux_combo(1, self.body_character_var, tuple(
+                self._body_target_display(discovery_id, name) for discovery_id, name in self.discovery_targets
+            ))
             return
         if kind == "힌트 획득":
-            label(0, "힌트:")
-            combo(1, self.body_hint_var, tuple(self._body_target_display(hint_id, name) for hint_id, name in self.hint_targets if hint_id >= 0), 3)
+            aux_label(0, "힌트:")
+            aux_combo(1, self.body_hint_var, tuple(
+                self._body_target_display(hint_id, name)
+                for hint_id, name in self.hint_targets if hint_id >= 0
+            ))
             return
         if kind == "이벤트 결과 코드":
-            label(0, "처리:")
-            combo(1, self.body_result_var, tuple(name for _code, name in EVENT_RESULT_CODES), 2)
+            aux_label(0, "처리:")
+            aux_combo(1, self.body_result_var, tuple(name for _code, name in EVENT_RESULT_CODES))
             return
         if kind in STAT_COMMAND_KINDS:
-            label(0, "수치:")
-            entry(1, self.body_value_var)
-            ttk.Checkbutton(row, text="랜덤 범위:", variable=self.body_random_var, command=self._body_random_changed).grid(row=0, column=2, sticky="w")
+            widget = ttk.Checkbutton(aux, text="랜덤 범위", variable=self.body_random_var, command=self._body_random_changed)
+            widget.grid(
+                row=0, column=auxiliary_column + 2, sticky="w", padx=(0, 5),
+            )
+            self.body_classification_controls.append(widget)
             if self.body_random_var.get():
-                entry(3, self.body_value2_var)
+                aux_label(3, "종료값:")
+                aux_entry(4, self.body_value2_var)
+            final_value("값:", self.body_value_var, allow_negative=kind == "상태값 증감")
             return
         if kind in STAT_REFERENCE_COMMAND_KINDS:
-            label(0, "참조 상태값 ID:")
-            entry(1, self.body_value_var)
+            final_value("참조 상태값 ID:", self.body_value_var)
             return
         if kind == "날짜 경과":
-            label(0, "일수:")
-            entry(1, self.body_value_var)
-            ttk.Checkbutton(row, text="랜덤 범위:", variable=self.body_random_var, command=self._body_random_changed).grid(row=0, column=2, sticky="w")
+            widget = ttk.Checkbutton(aux, text="랜덤 범위", variable=self.body_random_var, command=self._body_random_changed)
+            widget.grid(
+                row=0, column=auxiliary_column, sticky="w", padx=(0, 5),
+            )
+            self.body_classification_controls.append(widget)
             if self.body_random_var.get():
-                entry(3, self.body_value2_var)
+                aux_label(1, "종료 일수:")
+                aux_entry(2, self.body_value2_var)
+            final_value("일수:", self.body_value_var)
             return
         if kind == "소지금 비교 분기":
-            label(0, "소지금 기준값:")
-            entry(1, self.body_value2_var)
-            label(2, "이동할 행:")
-            entry(3, self.body_value_var)
+            aux_label(0, "소지금 기준값:")
+            aux_entry(1, self.body_value2_var)
+            final_value("이동할 행:", self.body_value_var)
             return
         if kind == RUNTIME_REFERENCE_BRANCH_KIND:
-            label(0, "기준값:")
-            entry(1, self.body_value2_var)
-            label(2, "특수 참조 ID:")
-            entry(3, self.body_range_end_var)
-            label(4, "이동할 행:")
-            entry(5, self.body_value_var)
+            aux_label(0, "기준값:")
+            aux_entry(1, self.body_value2_var)
+            aux_label(2, "특수 참조 ID:")
+            aux_entry(3, self.body_range_end_var)
+            final_value("이동할 행:", self.body_value_var)
             return
         if kind in ("STORY0.CDS 외 분기", "STORY1.CDS 외 분기"):
-            label(0, "외부 분기값:")
-            entry(1, self.body_value_var)
+            final_value("외부 분기값:", self.body_value_var)
             return
         if kind in NUMERIC_COMPARE_BRANCH_KINDS:
-            label(0, "기준값:")
-            entry(1, self.body_value2_var)
-            label(2, "이동할 행:")
-            entry(3, self.body_value_var)
-            return
-        if kind in (ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND):
-            label(0, "이동할 행:")
-            entry(1, self.body_value_var)
+            aux_label(2, "기준값:")
+            aux_entry(3, self.body_value2_var)
+            final_value("이동할 행:", self.body_value_var)
             return
         if kind == STATE_REFERENCE_COMPARE_BRANCH_KIND:
-            label(0, "대상 상태값:")
-            combo(1, self.body_stat_target_var, tuple(name for _stat_id, name in STAT_TARGETS))
-            label(2, "참조 상태값 ID:")
-            entry(3, self.body_value2_var)
-            label(4, "이동할 행:")
-            entry(5, self.body_value_var)
-            return
-        if kind == HINT_BRANCH_KIND:
-            label(0, "이동할 행:")
-            entry(1, self.body_value_var)
-            return
-        if kind == DISCOVERY_BRANCH_KIND:
-            label(0, "이동할 행:")
-            entry(1, self.body_value_var)
-            return
-        if kind == DISCOVERY_REGISTRATION_BRANCH_KIND:
-            label(0, "이동할 행:")
-            entry(1, self.body_value_var)
+            aux_label(2, "참조 상태값 ID:")
+            aux_entry(3, self.body_value2_var)
+            final_value("이동할 행:", self.body_value_var)
             return
         if kind == YEAR_RANGE_BRANCH_KIND:
-            label(0, "시작 연도:")
-            entry(1, self.body_value2_var)
-            label(2, "종료 연도:")
-            entry(3, self.body_range_end_var)
-            label(4, "이동할 행:")
-            entry(5, self.body_value_var)
+            aux_label(2, "시작 연도:")
+            aux_entry(3, self.body_value2_var)
+            aux_label(4, "종료 연도:")
+            aux_entry(5, self.body_range_end_var)
+            final_value("이동할 행:", self.body_value_var)
             return
         if kind == YEAR_BRANCH_KIND:
-            label(0, "기준 연도:")
-            entry(1, self.body_value2_var)
-            label(2, "이동할 행:")
-            entry(3, self.body_value_var)
+            aux_label(2, "기준 연도:")
+            aux_entry(3, self.body_value2_var)
+            final_value("이동할 행:", self.body_value_var)
             return
         if kind == YEAR_UPPER_BRANCH_KIND:
-            label(0, "연도 상한:")
-            entry(1, self.body_value2_var)
-            label(2, "이동할 행:")
-            entry(3, self.body_value_var)
+            aux_label(2, "연도 상한:")
+            aux_entry(3, self.body_value2_var)
+            final_value("이동할 행:", self.body_value_var)
             return
         if kind == CITY_BRANCH_KIND:
-            label(0, "도시:")
-            combo(1, self.body_city_var, tuple(
+            aux_label(2, "도시:")
+            aux_combo(3, self.body_city_var, tuple(
                 self._body_target_display(city_id, name) for city_id, name in self.city_targets
-            ), 2)
-            label(3, "이동할 행:")
-            entry(4, self.body_value_var)
-            return
-        if kind == NPC_BRANCH_KIND:
-            label(0, "이동할 행:")
-            entry(1, self.body_value_var)
+            ))
+            final_value("이동할 행:", self.body_value_var)
             return
         if kind == CHOICE_BRANCH_KIND:
-            label(0, "선택값:")
-            entry(1, self.body_value2_var)
-            label(2, "이동할 행:")
-            entry(3, self.body_value_var)
+            aux_label(2, "선택값:")
+            aux_entry(3, self.body_value2_var)
+            final_value("이동할 행:", self.body_value_var)
             return
-        if kind in ("결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "특수 분기"):
-            label(0, "이동할 행:")
-            entry(1, self.body_value_var)
+        if kind in (
+            ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND, HINT_BRANCH_KIND,
+            DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND, NPC_BRANCH_KIND,
+            "결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "특수 분기",
+        ):
+            final_value("이동할 행:", self.body_value_var)
             return
-        label(0, "값:")
-        entry(1, self.body_value_var, 5)
+        if kind in ("인물 이벤트 실행", "인물 이벤트 실행 (보조)"):
+            final_value("인물 이벤트 ID:", self.body_value_var)
+            return
+        if kind == "이벤트 분류 설정":
+            final_value("실행 모드:", self.body_value_var)
+            return
+        if kind == "이벤트 조건 판정":
+            final_value("숨은 수치 코드:", self.body_value_var)
+            return
+        if kind == "이벤트 내부 참조":
+            final_value("파트 오프셋:", self.body_value_var)
+            return
+        if kind == "내부 상태 설정":
+            final_value("이벤트 상태 ID:", self.body_value_var)
+            return
+        if kind == "특수 상태 처리":
+            final_value("원본 인수:", self.body_value_var)
+            return
+        final_value("값:", self.body_value_var)
 
     def _hide_disabled_body_inputs(self) -> None:
         """Do not leave inapplicable command inputs as greyed-out placeholders."""
@@ -2631,7 +2847,6 @@ class DisevEditor:
     def _arrange_body_editor_rows(self, kind: str) -> None:
         """Use row 1 for classification and row 2 for its target/value controls."""
         editor = self.body_value_entry.master
-        self.body_action_row.grid_configure(row=2)
         for column in range(11):
             editor.columnconfigure(column, weight=0)
         for column in (1, 3, 5):
@@ -3083,7 +3298,7 @@ class DisevEditor:
         if kind == "이벤트 내부 참조":
             numeric_value = int(str(value).strip())
             if not 0 <= numeric_value <= 65535:
-                raise ValueError("내부 이벤트 참조값은 0~65,535 범위여야 합니다.")
+                raise ValueError("파트 오프셋은 0~65,535 범위여야 합니다.")
             return {
                 "kind": kind,
                 "raw": b"\x30\x1D" + struct.pack("<H", numeric_value),
@@ -3095,7 +3310,7 @@ class DisevEditor:
         if kind == "이벤트 분류 설정":
             numeric_value = int(str(value).strip())
             if not 0 <= numeric_value <= 65535:
-                raise ValueError("이벤트 분류 값은 0~65,535 범위여야 합니다.")
+                raise ValueError("실행 모드는 0~65,535 범위여야 합니다.")
             return {
                 "kind": kind,
                 "raw": b"\x26\x0F" + struct.pack("<H", numeric_value),
@@ -3105,7 +3320,7 @@ class DisevEditor:
         if kind == "이벤트 조건 판정":
             numeric_value = int(str(value).strip())
             if not 0 <= numeric_value <= 65535:
-                raise ValueError("이벤트 조건 값은 0~65,535 범위여야 합니다.")
+                raise ValueError("숨은 수치 코드는 0~65,535 범위여야 합니다.")
             return {
                 "kind": kind,
                 "raw": b"\x35\x1C" + struct.pack("<H", numeric_value),
@@ -3167,9 +3382,11 @@ class DisevEditor:
                 check_value = int(str(value).strip())
                 difficulty = int(str(compare_value).strip())
             except (TypeError, ValueError) as exc:
-                raise ValueError("판정값과 난이도는 정수로 입력하세요.") from exc
+                raise ValueError("미니게임 값과 종류는 정수로 입력하세요.") from exc
             if not 0 <= check_value <= 0xFFFFFFFF or not 0 <= difficulty <= 0xFFFF:
-                raise ValueError("판정값은 0~4,294,967,295, 난이도는 0~65,535 범위여야 합니다.")
+                raise ValueError("미니게임 값은 0~4,294,967,295, 종류는 0~65,535 범위여야 합니다.")
+            if difficulty == 5 and not 4 <= check_value <= 7:
+                raise ValueError("발라몬의 탑 퍼즐의 원반 수는 4~7 범위여야 합니다.")
             return {
                 "kind": kind,
                 "raw": b"\x0E\x14" + struct.pack("<I", check_value) + b"\x04" + struct.pack("<H", difficulty),
@@ -3186,12 +3403,12 @@ class DisevEditor:
         if kind == "내부 상태 설정":
             state_id = int(str(value).strip())
             if not 0 <= state_id <= 0xFFFF:
-                raise ValueError("내부 상태 ID는 0~65,535 범위여야 합니다.")
+                raise ValueError("이벤트 상태 ID는 0~65,535 범위여야 합니다.")
             return {"kind": kind, "raw": b"\x22\x00" + struct.pack("<H", state_id), "value": state_id, "editable": True}
         if kind == "특수 상태 처리":
             numeric_value = int(str(value).strip())
             if not 0 <= numeric_value <= 0xFFFFFFFF:
-                raise ValueError("특수 상태 값은 0~4,294,967,295 범위여야 합니다.")
+                raise ValueError("원본 인수는 0~4,294,967,295 범위여야 합니다.")
             return {"kind": kind, "raw": b"\x34\x1C\x02\0\x1A" + struct.pack("<I", numeric_value), "value": numeric_value, "editable": True}
         if kind == CHOICE_BRANCH_KIND:
             target_index = int(str(value).strip())
@@ -3603,9 +3820,16 @@ class DisevEditor:
         self.pending = True
         self._refresh_body_list_selection()
 
-    def _insert_body_command(self) -> None:
-        if self.selected_body_index is None:
+    def _insert_body_command(self, insert_index: int | None = None) -> None:
+        if insert_index is None and self.selected_body_index is None:
             messagebox.showerror(ui("body_insert_failed"), ui("select_body_to_insert"), parent=self.root)
+            return
+        if insert_index is None:
+            insert_index = self.selected_body_index
+        assert insert_index is not None
+        body_end_index = len(self.body_tokens) - 1 if self.body_tokens and self.body_tokens[-1]["kind"] == "본문 끝" else len(self.body_tokens)
+        if not 0 <= insert_index <= body_end_index:
+            messagebox.showerror(ui("body_insert_failed"), "삽입할 본문 행 번호가 올바르지 않습니다.", parent=self.root)
             return
         kind = self._builder_body_kind()
         if kind not in BODY_COMMAND_KINDS:
@@ -3627,19 +3851,26 @@ class DisevEditor:
         except (UnicodeEncodeError, ValueError) as exc:
             messagebox.showerror(ui("body_insert_failed"), str(exc), parent=self.root)
             return
-        self._shift_branch_targets_for_insert(self.selected_body_index)
-        self.body_tokens.insert(self.selected_body_index, token)
+        self._shift_branch_targets_for_insert(insert_index)
+        self.body_tokens.insert(insert_index, token)
+        self.selected_body_index = insert_index
         self.pending = True
         self._refresh_body_list_selection()
 
-    def _remove_body_command(self) -> None:
-        if self.selected_body_index is None:
+    def _remove_body_command(self, remove_index: int | None = None) -> None:
+        if remove_index is None and self.selected_body_index is None:
             messagebox.showerror(ui("body_remove_failed"), ui("select_body_to_remove"), parent=self.root)
             return
-        if self.body_tokens[self.selected_body_index]["kind"] == "본문 끝":
+        if remove_index is None:
+            remove_index = self.selected_body_index
+        assert remove_index is not None
+        if not 0 <= remove_index < len(self.body_tokens):
+            messagebox.showerror(ui("body_remove_failed"), "제거할 본문 행 번호가 올바르지 않습니다.", parent=self.root)
+            return
+        if self.body_tokens[remove_index]["kind"] == "본문 끝":
             messagebox.showerror(ui("body_remove_failed"), ui("body_end_cannot_remove"), parent=self.root)
             return
-        removed_index = self.selected_body_index
+        removed_index = remove_index
         self.body_tokens.pop(removed_index)
         self._shift_branch_targets_for_remove(removed_index)
         self.selected_body_index = min(self.selected_body_index, len(self.body_tokens) - 1)
@@ -3653,11 +3884,9 @@ class DisevEditor:
         self.selected_condition_index = None
         editable = self.condition_tokens is not None
         self.condition_kind_combo.configure(state="readonly" if editable else "disabled")
-        self.condition_edit_button.configure(state="normal" if editable else "disabled")
-        self.condition_add_button.configure(state="normal" if editable else "disabled")
-        self.condition_insert_button.configure(state="normal" if editable else "disabled")
-        self.condition_remove_button.configure(state="normal" if editable else "disabled")
-        self.condition_clear_button.configure(state="normal" if editable else "disabled")
+        self.condition_action_combo.configure(state="readonly" if editable else "disabled")
+        self.condition_apply_button.configure(state="normal" if editable else "disabled")
+        self.condition_insert_row_entry.configure(state="normal" if editable else "disabled")
         for widget in self.condition_value_spins:
             widget.configure(state="normal" if editable else "disabled")
         self.condition_target_combo.configure(state="readonly" if editable else "disabled")
@@ -3708,16 +3937,22 @@ class DisevEditor:
         self.pending = True
         self.status_var.set(ui("status_condition_added"))
 
-    def _apply_condition_token(self) -> None:
-        if self.condition_tokens is None or self.selected_condition_index is None:
+    def _apply_condition_token(self, edit_index: int | None = None) -> None:
+        if self.condition_tokens is None or (edit_index is None and self.selected_condition_index is None):
             messagebox.showerror(ui("condition_edit_failed"), ui("select_condition_to_edit"), parent=self.root)
+            return
+        if edit_index is None:
+            edit_index = self.selected_condition_index
+        assert edit_index is not None
+        if not 0 <= edit_index < len(self.condition_tokens):
+            messagebox.showerror(ui("condition_edit_failed"), "수정할 조건 행 번호가 올바르지 않습니다.", parent=self.root)
             return
         try:
             token = self._token_from_builder()
             if token is None:
                 raise ValueError("'항상 실행'은 조건 목록의 항목으로 수정할 수 없습니다.")
             candidate = list(self.condition_tokens)
-            candidate[self.selected_condition_index] = token
+            candidate[edit_index] = token
             if candidate[0][0] == "또는 (OR)" or candidate[-1][0] == "또는 (OR)":
                 raise ValueError("OR는 첫 번째 또는 마지막 조건일 수 없습니다.")
             if any(
@@ -3729,35 +3964,54 @@ class DisevEditor:
         except ValueError as exc:
             messagebox.showerror(ui("condition_edit_failed"), str(exc), parent=self.root)
             return
-        self._refresh_condition_display(self.selected_condition_index)
+        self._refresh_condition_display(edit_index)
         self.pending = True
         self.status_var.set(ui("status_condition_updated"))
 
-    def _insert_condition_token(self) -> None:
+    def _insert_condition_token(self, insert_index: int | None = None) -> None:
         if self.condition_tokens is None:
             return
-        if self.selected_condition_index is None:
+        if insert_index is None and self.selected_condition_index is None:
             messagebox.showerror(ui("condition_insert_failed"), ui("select_condition_to_insert"), parent=self.root)
+            return
+        if insert_index is None:
+            insert_index = self.selected_condition_index
+        assert insert_index is not None
+        if not 0 <= insert_index <= len(self.condition_tokens):
+            messagebox.showerror(ui("condition_insert_failed"), "삽입할 조건 행 번호가 올바르지 않습니다.", parent=self.root)
             return
         try:
             token = self._token_from_builder()
             if token is None:
                 raise ValueError("'항상 실행'은 조건 목록에 삽입할 수 없습니다.")
-            if token[0] == "또는 (OR)" and self.selected_condition_index == 0:
-                raise ValueError("OR는 첫 조건으로 삽입할 수 없습니다.")
-            self.condition_tokens.insert(self.selected_condition_index, token)
+            candidate = list(self.condition_tokens)
+            candidate.insert(insert_index, token)
+            if candidate[0][0] == "또는 (OR)" or candidate[-1][0] == "또는 (OR)":
+                raise ValueError("OR는 첫 번째 또는 마지막 조건일 수 없습니다.")
+            if any(
+                candidate[index][0] == "또는 (OR)" and candidate[index + 1][0] == "또는 (OR)"
+                for index in range(len(candidate) - 1)
+            ):
+                raise ValueError("OR는 OR 바로 뒤에 둘 수 없습니다.")
+            self.condition_tokens = candidate
         except ValueError as exc:
             messagebox.showerror(ui("condition_insert_failed"), str(exc), parent=self.root)
             return
-        self._refresh_condition_display(self.selected_condition_index)
+        self._refresh_condition_display(insert_index)
         self.pending = True
         self.status_var.set(ui("status_condition_inserted"))
 
-    def _remove_selected_condition(self) -> None:
-        if self.condition_tokens is None or self.selected_condition_index is None:
+    def _remove_selected_condition(self, remove_index: int | None = None) -> None:
+        if self.condition_tokens is None or (remove_index is None and self.selected_condition_index is None):
             messagebox.showerror(ui("condition_remove_failed"), ui("select_condition_to_remove"), parent=self.root)
             return
-        index = self.selected_condition_index
+        if remove_index is None:
+            remove_index = self.selected_condition_index
+        assert remove_index is not None
+        if not 0 <= remove_index < len(self.condition_tokens):
+            messagebox.showerror(ui("condition_remove_failed"), "제거할 조건 행 번호가 올바르지 않습니다.", parent=self.root)
+            return
+        index = remove_index
         self.condition_tokens.pop(index)
         self._refresh_condition_display(min(index, len(self.condition_tokens) - 1))
         self.pending = True
@@ -3916,7 +4170,7 @@ class DisevEditor:
                 self.tree.focus(item)
         # insert 직후에는 Treeview 행 높이가 아직 계산되지 않을 수 있다.
         self.root.after(80, self._sync_tree_scrollbar)
-        self.root.after_idle(self._autosize_discovery_tree_and_panel)
+        self.root.after_idle(self._fit_discovery_tree_to_panel)
 
     def _select_part(self, _event=None) -> None:
         if self.loading_editor:
@@ -3992,7 +4246,9 @@ class DisevEditor:
         self.body_stat_target_combo.configure(state="disabled")
         self.body_hint_state_combo.configure(state="disabled")
         self.body_hint_combo.configure(state="disabled")
-        self.body_edit_button.configure(state="disabled")
+        self.body_action_combo.configure(state="readonly")
+        self.body_apply_button.configure(state="normal")
+        self.body_insert_row_entry.configure(state="normal")
         self.root.after_idle(lambda: self._autosize_tree_columns(self.body_tree, skip=("value",)))
 
     @staticmethod
@@ -4110,12 +4366,12 @@ class DisevEditor:
                 })
                 i += 4
                 continue
-            # 26 0F [u16]: 유적·민족·인물 이벤트에서 쓰는 내부 분류값을 설정한다.
+            # 26 0F [u16]: 이후 실행 방식 2 인물 이벤트가 사용할 실행 모드를 설정한다.
             if i + 4 <= len(body) and body[i : i + 2] == b"\x26\x0F":
                 tokens.append({"kind": "이벤트 분류 설정", "raw": body[i : i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
-            # 26 1C 1A 00 08 [인물 u16]: 이벤트가 사용할 역사 인물 참조를 설정한다.
+            # 26 1C 1A 00 08 [인물 u16]: 이벤트가 사용할 역사 인물 참조를 바인딩한다.
             if i + 7 <= len(body) and body[i : i + 5] == b"\x26\x1C\x1A\0\x08":
                 character_id = struct.unpack_from("<H", body, i + 5)[0]
                 tokens.append({
@@ -4124,7 +4380,7 @@ class DisevEditor:
                 })
                 i += 7
                 continue
-            # 23 08 [인물 u16]: 인물 런타임 상태의 세 번째 처리 형식.
+            # 23 08 [인물 u16]: 인물 런타임 상태 비트 0x02를 설정한다.
             if i + 4 <= len(body) and body[i : i + 2] == b"\x23\x08":
                 character_id = struct.unpack_from("<H", body, i + 2)[0]
                 tokens.append({
@@ -4140,18 +4396,18 @@ class DisevEditor:
                 tokens.append({"kind": "인물 상태 비트 해제", "raw": body[i : i + 7], "value": bit_index, "character_id": character_id, "editable": bit_index <= 15})
                 i += 7
                 continue
-            # 22 08 [인물 u16]: 인물 런타임 상태의 네 번째 처리 형식(상태 비트 0x04 설정).
+            # 22 08 [인물 u16]: 인물 런타임 상태 비트 0x04를 설정한다.
             if i + 4 <= len(body) and body[i : i + 2] == b"\x22\x08":
                 character_id = struct.unpack_from("<H", body, i + 2)[0]
                 tokens.append({"kind": "인물 상태 처리 4", "raw": body[i : i + 4], "value": character_id, "character_id": character_id, "editable": True})
                 i += 4
                 continue
-            # 22 00 [u16]: 내부 런타임 상태 항목을 설정한다.
+            # 22 00 [u16]: 이벤트 상태 레코드의 상태값을 2로 설정한다.
             if i + 4 <= len(body) and body[i : i + 2] == b"\x22\x00":
                 tokens.append({"kind": "내부 상태 설정", "raw": body[i : i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
-            # 34 1C 02 00 1A [u32]: 파라과이족 이벤트에서 확인된 내부 특수 상태 처리.
+            # 34 1C 02 00 1A [u32]: 현재 투입 인원(대원/선원)을 올림하여 절반으로 설정한다.
             if i + 9 <= len(body) and body[i : i + 5] == b"\x34\x1C\x02\0\x1A":
                 tokens.append({"kind": "특수 상태 처리", "raw": body[i : i + 9], "value": struct.unpack_from("<I", body, i + 5)[0], "editable": True})
                 i += 9
@@ -4173,9 +4429,8 @@ class DisevEditor:
                 tokens.append({"kind": "해상 전투", "raw": body[i : i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
-            # 38/3D 0D [인물 u16]: 역사 인물의 런타임 상태를 처리한다.
-            # 3D는 현재 파일에서 항상 38 바로 앞에만 쓰인다. 정확한 내부 상태의
-            # 이름은 확정되지 않아 순서대로 처리 1/2로 보존한다.
+            # 38 0D는 역사 인물 런타임 이벤트 상태를 초기화하고,
+            # 3D 0D는 지정 인물을 통역으로 고용하거나 기존 통역을 교체한다.
             if i + 4 <= len(body) and body[i + 1] == 0x0D and body[i] in (0x38, 0x3D):
                 kind = "인물 상태 처리 1" if body[i] == 0x38 else "인물 상태 처리 2"
                 character_id = struct.unpack_from("<H", body, i + 2)[0]
@@ -4185,18 +4440,18 @@ class DisevEditor:
                 })
                 i += 4
                 continue
-            # 0C/2F 0D [u16]: 인물 타입 ID를 대상으로 하는 서로 다른 이벤트 처리.
+            # 0C/2F 0D [u16]: 인물 이벤트를 각각 실행 방식 2/3으로 실행한다.
             if i + 4 <= len(body) and body[i + 1] == 0x0D and body[i] in (0x0C, 0x2F):
                 kind = "인물 이벤트 실행" if body[i] == 0x0C else "인물 이벤트 실행 (보조)"
                 tokens.append({"kind": kind, "raw": body[i : i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
-            # 30 1D [u16]: 분기와 발견 처리 사이에서 쓰는 내부 이벤트 참조값.
+            # 30 1D [u16]: 현재 파트 시작 기준 바이트 오프셋으로 즉시 이동한다.
             if i + 4 <= len(body) and body[i : i + 2] == b"\x30\x1D":
                 tokens.append({"kind": "이벤트 내부 참조", "raw": body[i : i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
-            # 35 1C [u16]: 내부 조건을 판정하고 바로 뒤 결과 분기에 성공/실패를 제공한다.
+            # 35 1C [u16]: 숨은 수치 코드(6·18·21·23)를 확률 판정해 결과를 제공한다.
             if i + 4 <= len(body) and body[i : i + 2] == b"\x35\x1C":
                 tokens.append({"kind": "이벤트 조건 판정", "raw": body[i : i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
@@ -4341,12 +4596,12 @@ class DisevEditor:
                 tokens.append({"kind": kind, "raw": body[i:i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
-            # 05 05 [u16]: 직전 획득한 아이템을 이벤트용으로 추가 등록한다.
+            # 05 05 [u16]: ID를 16칸 휴대 소지품 목록에 추가한다.
             if i + 4 <= len(body) and body[i:i + 2] == b"\x05\x05":
                 tokens.append({"kind": "이벤트 아이템 등록", "raw": body[i:i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
-            # 26 05 [u16]: 아이템을 대상으로 이벤트 전용 처리를 실행한다.
+            # 26 05 [u16]: ID에 해당하는 별도 이벤트 상태 항목을 처리 완료로 기록한다.
             if i + 4 <= len(body) and body[i:i + 2] == b"\x26\x05":
                 tokens.append({"kind": "이벤트 아이템 처리", "raw": body[i:i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
@@ -4355,12 +4610,12 @@ class DisevEditor:
                 tokens.append({"kind": "음원 재생", "raw": body[i:i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
-            # 0E 04 [u16]: 내부 이벤트 판정을 실행하고 뒤 분기용 결과를 설정한다.
+            # 0E 04 [u16]: 성배·스핑크스·미궁·낚시·입방체 미니게임을 실행한다.
             if i + 4 <= len(body) and body[i:i + 2] == b"\x0E\x04":
                 tokens.append({"kind": "이벤트 판정", "raw": body[i:i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
-            # 0E 14 [판정값 u32] 04 [난이도 u16]: 유적·함정 이벤트의 수치 판정.
+            # 0E 14 [u32] 04 [u16]: 코인 게임(4) 또는 발라몬의 탑(5)을 실행한다.
             if i + 9 <= len(body) and body[i:i + 2] == b"\x0E\x14" and body[i + 6] == 0x04:
                 tokens.append({
                     "kind": "특수 수치 판정", "raw": body[i:i + 9],
@@ -4395,15 +4650,15 @@ class DisevEditor:
             # 43 2B 1C [상태값 u16] 1C [참조 상태값 u16] [상대 이동 u16]:
             # 두 런타임 상태값을 비교한다. 나마하게에서 확인된 형식이며, 뒤의
             # 상대 이동은 0x43 공통 분기 처리기가 읽는다. UI에서는 "상태값끼리 비교"로 표시한다.
-            if i + 11 <= len(body) and body[i:i + 3] == b"\x43\x2B\x1C" and body[i + 5] == 0x1C:
+            if i + 10 <= len(body) and body[i:i + 3] == b"\x43\x2B\x1C" and body[i + 5] == 0x1C:
                 stat_id = struct.unpack_from("<H", body, i + 3)[0]
                 source_stat_id = struct.unpack_from("<H", body, i + 6)[0]
                 tokens.append({
-                    "kind": STATE_REFERENCE_COMPARE_BRANCH_KIND, "raw": body[i:i + 11], "value": None,
+                    "kind": STATE_REFERENCE_COMPARE_BRANCH_KIND, "raw": body[i:i + 10], "value": None,
                     "stat_id": stat_id, "source_stat_id": source_stat_id,
-                    "branch_prefix": body[i:i + 9], "editable": True,
+                    "branch_prefix": body[i:i + 8], "relative_offset": 8, "editable": True,
                 })
-                i += 11
+                i += 10
                 continue
             # 43 2B 1C [상태값 u16] 1A [기준값 u32] [상대 이동 u16]:
             # 악어 이벤트에서 확인된 고정 기준값 초과 분기다.
@@ -4666,7 +4921,7 @@ class DisevEditor:
         for token in tokens:
             raw = bytes(token["raw"])
             if token.get("kind") in (HINT_BRANCH_KIND, DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND, ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND, YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND, YEAR_RANGE_BRANCH_KIND, CITY_BRANCH_KIND, NPC_BRANCH_KIND, CHOICE_BRANCH_KIND, STATE_REFERENCE_COMPARE_BRANCH_KIND, RUNTIME_REFERENCE_BRANCH_KIND, "소지금 비교 분기") + NUMERIC_COMPARE_BRANCH_KINDS:
-                relative_offset = 14 if token.get("kind") in RANDOM_STATE_COMPARE_BRANCH_KINDS else 10 if token.get("kind") in (ABILITY_COMPARE_BRANCH_KIND, ABILITY_COMPARE3_BRANCH_KIND, STATE_GREATER_BRANCH_KIND, "소지금 비교 분기") else int(token.get("relative_offset", 9)) if token.get("kind") in (STATE_REFERENCE_COMPARE_BRANCH_KIND, STATE_SCALAR_COMPARE_BRANCH_KIND) else 8 if token.get("kind") == RUNTIME_REFERENCE_BRANCH_KIND else 8 if token.get("kind") == YEAR_RANGE_BRANCH_KIND else 4 if token.get("kind") == CHOICE_BRANCH_KIND else 5
+                relative_offset = 14 if token.get("kind") in RANDOM_STATE_COMPARE_BRANCH_KINDS else 10 if token.get("kind") in (ABILITY_COMPARE_BRANCH_KIND, ABILITY_COMPARE3_BRANCH_KIND, STATE_GREATER_BRANCH_KIND, STATE_LESS_BRANCH_KIND, STATE_LESS_OR_EQUAL_BRANCH_KIND, "소지금 비교 분기") else int(token.get("relative_offset", 9)) if token.get("kind") in (STATE_REFERENCE_COMPARE_BRANCH_KIND, STATE_SCALAR_COMPARE_BRANCH_KIND) else 8 if token.get("kind") == RUNTIME_REFERENCE_BRANCH_KIND else 8 if token.get("kind") == YEAR_RANGE_BRANCH_KIND else 4 if token.get("kind") == CHOICE_BRANCH_KIND else 5
                 target_offset = offset + len(raw) + struct.unpack_from("<H", raw, relative_offset)[0]
                 target_number = offsets.get(target_offset)
                 token["target_index"] = target_number
@@ -4744,10 +4999,16 @@ class DisevEditor:
             encoded.append(raw)
         return b"".join(encoded)
 
-    def _apply_body_command(self) -> None:
-        if self.selected_body_index is None:
+    def _apply_body_command(self, edit_index: int | None = None) -> None:
+        if edit_index is None and self.selected_body_index is None:
             return
-        token = self.body_tokens[self.selected_body_index]
+        if edit_index is None:
+            edit_index = self.selected_body_index
+        assert edit_index is not None
+        if not 0 <= edit_index < len(self.body_tokens):
+            return
+        self.selected_body_index = edit_index
+        token = self.body_tokens[edit_index]
         if not bool(token["editable"]):
             return
         kind = self._builder_body_kind()
@@ -4911,12 +5172,25 @@ class DisevEditor:
     def _body_display_levels(self, token: dict[str, object]) -> tuple[str, str, str, str]:
         """본문 목록의 명령 분류를 최대 4개 열로 나눠 표시한다."""
         kind = str(token["kind"])
-        group, subkind = BODY_KIND_TO_GROUP.get(kind, (kind, ""))
+        if kind == "이벤트 판정":
+            group = "미니게임"
+            subkind = MINIGAME_SUBKIND_BY_TYPE.get(int(token.get("value", -1)), f"미확인 종류 ({token.get('value', '?')})")
+        elif kind == "특수 수치 판정":
+            group = "미니게임"
+            subkind = MINIGAME_SUBKIND_BY_TYPE.get(int(token.get("difficulty", -1)), f"미확인 종류 ({token.get('difficulty', '?')})")
+        else:
+            group, subkind = BODY_KIND_TO_GROUP.get(kind, (kind, ""))
         detail = BODY_KIND_TO_DETAIL.get(kind, "")
         fourth = ""
         if kind in DIALOGUE_KINDS:
             prefix = bytes(token.get("speaker_prefix", b""))
             detail = next((name for name, value in self.dialogue_speakers.items() if value == prefix), "화자 미확인")
+            if kind == "대상 지정 대사":
+                character_id = int(token.get("character_id", -1))
+                fourth = next(
+                    (name for candidate_id, name in self.character_targets if candidate_id == character_id),
+                    f"인물 {character_id}",
+                )
         elif kind in STAT_COMMAND_KINDS:
             detail = STAT_TARGET_NAMES.get(int(token.get("stat_id", -1)), "대상 미확인")
         elif kind == HINT_BRANCH_KIND:
@@ -4932,6 +5206,13 @@ class DisevEditor:
         elif kind == CITY_BRANCH_KIND:
             city_id = int(token.get("character_id", -1))
             detail = next((name for candidate_id, name in self.city_targets if candidate_id == city_id), f"도시 {city_id}")
+        elif kind in (YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND):
+            # 비교 기준 연도는 분류가 아니라 실제 값이므로 3차 열에 표시한다.
+            detail = str(token.get("year", "-"))
+        elif kind == YEAR_RANGE_BRANCH_KIND:
+            # 이동할 행은 값 열에 남기고, 조건의 시작·종료 연도는 분류 열로 분리한다.
+            detail = f"시작 {token.get('start_year', '-')}"
+            fourth = f"종료 {token.get('end_year', '-')}"
         elif kind == NPC_BRANCH_KIND:
             npc_type = int(token.get("npc_type", 0x0D)); detail = "후원자" if npc_type == 0x12 else "인물"
             targets = self.sponsor_targets if npc_type == 0x12 else self.character_targets
@@ -4960,6 +5241,10 @@ class DisevEditor:
         if value is None:
             return "-"
         kind = str(token["kind"])
+        if kind == "이벤트 판정":
+            return "-"
+        if kind == "특수 수치 판정":
+            return f"{value}개" if int(token.get("difficulty", -1)) == 5 else "-"
         target_sets: dict[str, list[tuple[int, str]]] = {
             "아이템 획득": self.item_targets,
             "아이템 상실": self.item_targets,

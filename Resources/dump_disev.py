@@ -17,17 +17,30 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from discovery_records import (
-    AVI_OFFSET,
-    CG_OFFSET,
-    NO_MEDIA,
-    RECORD_SIZE,
-    STILL_OFFSET,
-    discovery_table,
-    locate_discovery_record,
-    u32,
-    va_to_file_offset,
-)
+try:
+    from .discovery_records import (
+        AVI_OFFSET,
+        CG_OFFSET,
+        NO_MEDIA,
+        RECORD_SIZE,
+        STILL_OFFSET,
+        discovery_table,
+        locate_discovery_record,
+        u32,
+        va_to_file_offset,
+    )
+except ImportError:  # Resources/dump_disev.py 직접 실행 지원
+    from discovery_records import (
+        AVI_OFFSET,
+        CG_OFFSET,
+        NO_MEDIA,
+        RECORD_SIZE,
+        STILL_OFFSET,
+        discovery_table,
+        locate_discovery_record,
+        u32,
+        va_to_file_offset,
+    )
 
 
 CATEGORY_NAMES = {
