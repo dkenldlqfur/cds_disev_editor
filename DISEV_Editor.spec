@@ -10,10 +10,7 @@ a = Analysis(
     [os.path.join(_project_root, 'DISEV_Editor.pyw')],
     pathex=[_project_root],
     binaries=[],
-    datas=[
-        (os.path.join(_project_root, 'Resources'), 'Resources'),
-        (os.path.join(_project_root, 'kaaba_part63.bin'), '.'),
-    ],
+    datas=[(os.path.join(_project_root, 'Resources'), 'Resources')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
