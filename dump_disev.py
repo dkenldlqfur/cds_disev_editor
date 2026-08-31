@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from insert_discovery_still import (
+from discovery_records import (
     AVI_OFFSET,
     CG_OFFSET,
     NO_MEDIA,

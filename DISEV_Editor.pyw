@@ -488,21 +488,28 @@ def formatted_hex(data: bytes, width: int = 16) -> str:
 
 def encode_dialogue_text(text: str) -> bytes:
     """UI의 일반형 대사 문자를 DISEV 원본의 전각 표기로 되돌린다."""
-    punctuation = {
-        ".": "\u3002", ",": "\u3001", "·": "·",
-        '"': "\u300c", "[": "\u3010", "]": "\u3011", "(": "\u3014", ")": "\u3015",
-    }
     encoded: list[str] = []
     for char in text:
         if char == " ":
             encoded.append("\u3000")
-        elif char in punctuation:
-            encoded.append(punctuation[char])
         elif 0x21 <= ord(char) <= 0x7E:
+            # 일본식 문장부호(、 「 】 등)로 치환하지 않고 게임의
+            # 전각 ASCII 글꼴로 통일한다.
             encoded.append(chr(ord(char) + 0xFEE0))
         else:
             encoded.append(char)
     return "".join(encoded).encode("cp949")
+
+
+def encode_multichoice_dialogue_text(text: str) -> bytes:
+    """다중 선택지의 구분자는 일반 전각 슬래시가 아닌 DISEV 제어 바이트다.
+
+    원본 선택지에는 CP949 문자 ``／``(A3 AF)가 아니라 ``81 5E``가 들어간다.
+    전자는 화면에 문자 그대로 표시될 뿐이고, 후자만 게임의 선택지 분리자로
+    처리된다. UI에서는 어느 쪽으로 입력해도 `/`로 받아 이 형식으로 저장한다.
+    """
+    choices = text.replace("／", "/").split("/")
+    return b"\x81\x5E".join(encode_dialogue_text(choice) for choice in choices)
 
 
 class NativeWinEdit:
@@ -2992,7 +2999,11 @@ class DisevEditor:
         item_id: int | None = None,
     ) -> dict[str, object]:
         if kind in DIALOGUE_KINDS:
-            encoded = encode_dialogue_text(value)
+            encoded = (
+                encode_multichoice_dialogue_text(value)
+                if kind == "다중 선택지 대사"
+                else encode_dialogue_text(value)
+            )
             if b"\0" in encoded:
                 raise ValueError("대사에는 NUL 문자를 넣을 수 없습니다.")
             if kind == "대상 지정 대사":
@@ -4745,10 +4756,16 @@ class DisevEditor:
         try:
             if kind in DIALOGUE_KINDS:
                 text = self.body_value_var.get()
-                encoded = encode_dialogue_text(text)
+                encoded = (
+                    encode_multichoice_dialogue_text(text)
+                    if kind == "다중 선택지 대사"
+                    else encode_dialogue_text(text)
+                )
                 if b"\0" in encoded:
                     raise ValueError("대사에는 NUL 문자를 넣을 수 없습니다.")
-                # 일반 대사로 되돌릴 때는 기존의 다른 창 플래그는 보존하되,
+                # 일반 대사는 반드시 00 0A ... 00 형식으로 정규화한다.
+                # 과거 버전이 저장한 0A ... 00(창 플래그 누락) 형식은 게임이
+                # 본문 명령으로 처리하지 못할 수 있으므로 보존하면 안 된다.
                 # 선택지 플래그(0B/10)만 일반 대사로 해제한다.
                 old_flag = token.get("flag")
                 if kind == "대상 지정 대사":
@@ -4761,10 +4778,10 @@ class DisevEditor:
                     self._refresh_body_list_selection()
                     self.status_var.set(ui("status_body_updated"))
                     return
-                flag = 0x0B if kind == "예/아니오 대사" else (old_flag if kind == "다중 선택지 대사" and old_flag in (0x10, 0x18) else 0x10 if kind == "다중 선택지 대사" else (None if old_flag in (0x0B, 0x10, 0x18) else old_flag))
+                flag = 0x0B if kind == "예/아니오 대사" else (old_flag if kind == "다중 선택지 대사" and old_flag in (0x10, 0x18) else 0x10 if kind == "다중 선택지 대사" else 0x00)
                 speaker_prefix = self._body_speaker_prefix()
                 suffix = b"\0" + bytes((int(token.get("choice_count", 0)),)) if kind == "다중 선택지 대사" else b"\0"
-                token["raw"] = (b"\x0A" if flag is None else bytes((int(flag), 0x0A))) + speaker_prefix + encoded + suffix
+                token["raw"] = bytes((int(flag), 0x0A)) + speaker_prefix + encoded + suffix
                 token["value"] = text
                 token["speaker_prefix"] = speaker_prefix
                 token["flag"] = flag

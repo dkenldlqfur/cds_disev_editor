@@ -1,5 +1,5 @@
 {
-  "version": "0.2",
+  "version": "0.2.1",
   "update": {
     "repository": "dkenldlqfur/cds_disev_editor",
     "asset_name": "DISEV_Editor_v{version}.zip"
