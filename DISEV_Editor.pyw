@@ -192,13 +192,16 @@ CONDITION_KIND_TO_GROUP = {kind: group for group, kind in CONDITION_GROUP_TO_KIN
 
 BODY_COMMAND_KINDS = (
     "대사", "예/아니오 대사", "다중 선택지 대사", "대상 지정 대사", "AVI 재생", "발견물 등록/발견 처리", "아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리",
-    "음원 재생", "음원 정지", "DSTILL 이미지 표시", "EVSTILL 이미지 표시", "CG 애니메이션 재생", "특수 조우 연출 설정", "특수 수치 판정", "해상 전투", "인물 이벤트 실행", "인물 이벤트 실행 (보조)", "이벤트 분류 설정", "이벤트 조건 판정", "이벤트 내부 참조", "주인공 성격 판정", "이벤트 판정", "힌트 획득", "대기", "날짜 경과", "발견물 이름 설정",
+    "음원 재생", "음원 정지", "DSTILL 이미지 표시", "EVSTILL 이미지 표시", "CG 애니메이션 재생", "특수 조우 연출 설정", "특수 수치 판정", "해상 전투", "인물 이벤트 실행", "인물 이벤트 실행 (보조)", "이벤트 분류 설정", "이벤트 조건 판정", "이벤트 내부 참조", "주인공 성격 판정", "이벤트 판정", "힌트 획득", "대기", "날짜 경과", "발견물 이름 입력 대기", "발견물 이름 강제 입력",
     "신도시 생성",
     "이미지 표시 종료", "대화창 숨김", "대화창 표시", "결과 거짓 설정", "결과 참 설정", "결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "특수 분기", "선택지 결과 시 이동", "힌트 상태 조건 이동", "발견물 상태 조건 이동", "발견물 등록 판정 이동", "아이템 소지 조건 이동", "아이템 미소지 조건 이동", "기준 연도 조건 이동", "연도 상한 조건 이동", "연도 범위 조건 이동", "도시 조건 이동", "NPC 조건 이동", "상태값 초과 조건 이동", "상태값 초과 조건 이동 (고정 기준)", "상태값 미만 조건 이동", "상태값 이하 조건 이동", "상태값 미만 조건 이동 (무작위 기준)", "상태값 이하 조건 이동 (무작위 기준)", "능력치 비교 분기", "능력치 비교3 분기", "상태값 참조 비교 조건 이동", "상태값 특수 비교 조건 이동", "소지금 비교 분기", "특수 참조 조건 이동", "STORY0.CDS 외 분기", "STORY1.CDS 외 분기",
     "소지금 증가", "소지금 감소", "이벤트 플래그 설정",
     "상태값 증감", "상태값 설정", "상태값 참조 증가", "내부 상태 설정", "특수 상태 처리", "인물 참조 설정", "인물 상태 처리 1", "인물 상태 처리 2", "인물 상태 처리 3", "인물 상태 처리 4", "인물 상태 비트 해제", "인물 선택 판정", "인물 위치 판정", "이벤트 결과 코드",
 )
 DIALOGUE_KINDS = ("대사", "예/아니오 대사", "다중 선택지 대사", "대상 지정 대사")
+DISCOVERY_NAME_WAIT_KIND = "발견물 이름 입력 대기"
+DISCOVERY_NAME_FORCE_KIND = "발견물 이름 강제 입력"
+DISCOVERY_NAME_COMMAND_KINDS = (DISCOVERY_NAME_WAIT_KIND, DISCOVERY_NAME_FORCE_KIND)
 CHARACTER_TARGET_COMMAND_KINDS = (
     "인물 참조 설정", "인물 상태 처리 1", "인물 상태 처리 2", "인물 상태 처리 3", "인물 상태 처리 4", "인물 상태 비트 해제", "인물 선택 판정", "인물 위치 판정",
 )
@@ -209,16 +212,23 @@ MINIGAME_SUBKINDS = (
 MINIGAME_TYPE_BY_SUBKIND = {name: index for index, name in enumerate(MINIGAME_SUBKINDS)}
 MINIGAME_SUBKIND_BY_TYPE = {index: name for name, index in MINIGAME_TYPE_BY_SUBKIND.items()}
 MINIGAME_EVENT_TYPES = frozenset((0, 1, 2, 3, 6))
+SPECIAL_ENCOUNTER_TYPES = (
+    (0, "백경"), (1, "돌고래"), (2, "날치"), (3, "유령선"),
+    (4, "오로라"), (5, "플라밍고 떼"), (6, "모르포 나비 떼"), (7, "유빙·빙산"),
+)
+SPECIAL_ENCOUNTER_SUBKINDS = tuple(name for _value, name in SPECIAL_ENCOUNTER_TYPES)
+SPECIAL_ENCOUNTER_VALUE_BY_SUBKIND = dict((name, value) for value, name in SPECIAL_ENCOUNTER_TYPES)
+SPECIAL_ENCOUNTER_SUBKIND_BY_VALUE = dict(SPECIAL_ENCOUNTER_TYPES)
 BODY_COMMAND_GROUPS: dict[str, tuple[str, ...]] = {
     "발견": (),
     "아이템": ("획득", "소지품 추가", "소지품 제거"),
     "음원": ("재생", "정지"),
     "미디어": ("이미지", "동영상"),
     "대사": ("일반", "예/아니오", "다중 선택", "대상 지정"),
-    "이벤트 상태": ("아이템 처리", "값 2 설정"), "특수 조우 연출 설정": (),
+    "이벤트 상태": ("아이템 처리", "값 2 설정"), "특수 조우": SPECIAL_ENCOUNTER_SUBKINDS,
     "해상 전투": (), "인물 이벤트": ("실행 방식 2", "실행 방식 3", "실행 모드 설정"),
     "조건 판정": ("숨은 수치 확률",), "주인공 성격 판정": (), "미니게임": MINIGAME_SUBKINDS, "힌트 획득": (),
-    "대기": (), "날짜 경과": (), "발견물 이름 설정": (), "신도시 생성": (), "대화창": ("숨김", "표시"),
+    "대기": (), "날짜 경과": (), "발견물 이름 설정": ("입력 대기", "강제 입력"), "신도시 생성": (), "대화창": ("숨김", "표시"),
     "결과 설정": ("거짓", "참"),
     "행 이동": ("이전 조건", "이전 판정 참", "특수 분기", "선택지 결과", "힌트 상태", "발견물", "아이템 상태", "기준 연도", "연도 상한", "연도 범위", "도시 조건", "NPC 조건", "상태값", "파트 오프셋"),
     "상태값": ("증감", "설정", "증감 (상태값 참조)"),
@@ -233,6 +243,7 @@ BODY_GROUP_TO_KIND = {
     ("아이템", "소지품 제거"): "아이템 상실",
     ("이벤트 상태", "아이템 처리"): "이벤트 아이템 처리",
     ("이벤트 상태", "값 2 설정"): "내부 상태 설정",
+    **{("특수 조우", name): "특수 조우 연출 설정" for name in SPECIAL_ENCOUNTER_SUBKINDS},
     ("음원", "재생"): "음원 재생", ("음원", "정지"): "음원 정지",
     ("미니게임", "성배 퍼즐"): "이벤트 판정",
     ("미니게임", "스핑크스 퀴즈"): "이벤트 판정",
@@ -244,7 +255,8 @@ BODY_GROUP_TO_KIND = {
     ("미디어", "DSTILL"): "DSTILL 이미지 표시", ("미디어", "EVSTILL"): "EVSTILL 이미지 표시",
     ("미디어", "종료"): "이미지 표시 종료", ("미디어", "CG"): "CG 애니메이션 재생", ("미디어", "AVI"): "AVI 재생",
     ("대사", "일반"): "대사", ("대사", "예/아니오"): "예/아니오 대사", ("대사", "다중 선택"): "다중 선택지 대사", ("대사", "대상 지정"): "대상 지정 대사",
-    ("발견물 이름 설정", ""): "발견물 이름 설정",
+    ("발견물 이름 설정", "입력 대기"): DISCOVERY_NAME_WAIT_KIND,
+    ("발견물 이름 설정", "강제 입력"): DISCOVERY_NAME_FORCE_KIND,
     ("상태값", "증감"): "상태값 증감", ("상태값", "설정"): "상태값 설정",
     ("상태값", "증감 (상태값 참조)"): "상태값 참조 증가",
     ("인물 이벤트", "실행 방식 2"): "인물 이벤트 실행", ("인물 이벤트", "실행 방식 3"): "인물 이벤트 실행 (보조)", ("인물 이벤트", "실행 모드 설정"): "이벤트 분류 설정",
@@ -266,6 +278,8 @@ BODY_GROUP_TO_KIND = {
     ("행 이동", "NPC 조건"): "NPC 조건 이동",
 }
 BODY_KIND_TO_GROUP = {kind: group for group, kind in BODY_GROUP_TO_KIND.items()}
+# 단일 opcode가 0~8의 여러 연출을 표현하므로, 기본 새 명령은 백경으로 둔다.
+BODY_KIND_TO_GROUP["특수 조우 연출 설정"] = ("특수 조우", "백경")
 MEDIA_SUBKINDS: dict[str, tuple[str, ...]] = {
     "이미지": ("DSTILL", "EVSTILL", "종료"),
     "동영상": ("CG", "AVI"),
@@ -430,7 +444,8 @@ COMMAND_GUIDE = (
     ("본문", "미디어 | 이미지 | 종료", "현재 표시 중인 이미지를 닫고 다음 명령으로 진행합니다."),
     ("본문", "미디어 | 동영상 | CG", "지정한 CG 애니메이션 번호를 재생합니다."),
     ("본문", "미디어 | 동영상 | AVI", "지정한 AVI 번호를 재생합니다."),
-    ("본문", "특수 조우 연출 설정", "동물·자연현상·유령선 등 특수 조우 이벤트의 연출 종류를 지정합니다. 값별 세부 동작은 아직 실행 파일 추적이 필요합니다."),
+    ("본문", "특수 조우 | 종류", "백경·돌고래·날치·유령선·오로라·플라밍고 떼·모르포 나비 떼·유빙/빙산의 전용 특수 조우 연출을 재생합니다. 상태 변화는 이어지는 별도 명령이 처리합니다."),
+    ("본문", "특수 조우 연출 설정", "동물·자연현상·유령선 등 특수 조우 이벤트의 연출 종류를 지정합니다. 상태 변화는 이어지는 별도 명령이 처리합니다."),
     ("본문", "해상 전투", "지정한 해상 조우 상대와 전투를 시작합니다. 결과 참·거짓 시 이동 명령으로 승패 경로를 처리합니다."),
     ("본문", "이벤트 아이템 등록", "아이템 ID를 16칸 휴대 소지품 목록에 추가합니다. 발견물 보상 ID는 실행 시 이 목록에 넣지 않고 건너뜁니다."),
     ("본문", "이벤트 아이템 처리", "아이템 ID에 해당하는 별도 이벤트 상태 항목을 처리 완료로 기록합니다. 소지품을 추가하거나 제거하지 않습니다."),
@@ -455,14 +470,15 @@ COMMAND_GUIDE = (
     ("본문", "대화창 | 숨김·표시", "2차 숨김 또는 표시를 선택해 대화창을 잠시 감추거나 다시 표시합니다."),
     ("본문", "결과 설정 | 참·거짓", "2차 참 또는 거짓을 선택해 직전 선택·조건의 결과를 강제로 설정합니다."),
     ("본문", "행 이동 | 특수 분기", "특수 이벤트의 내부 판정 결과에 따라 지정한 행으로 이동합니다. 판정 기준은 아직 실행 파일 추적이 필요합니다."),
-    ("본문", "대기", "지정한 내부 시간 단위만큼 다음 명령 실행을 멈춥니다."),
+    ("본문", "대기", "지정한 초 단위만큼 다음 명령 실행을 멈춥니다. 값 1은 약 1초입니다."),
     ("본문", "날짜 경과", "고정 일수 또는 랜덤 일수 범위만큼 게임 날짜를 진행하고 시간 경과 처리를 실행합니다."),
     ("본문", "발견", "대상 발견물을 등록하고 발견 상태로 바꿉니다."),
-    ("본문", "발견물 이름 설정", "이후 대사와 처리에서 사용할 대상 발견물의 표시 이름을 설정합니다."),
+    ("본문", "발견물 이름 설정 | 입력 대기", "게임 중 이름 입력창을 열고 입력을 기다립니다. 입력한 문자열 뒤에 값 문자열을 붙여 발견물 이름으로 저장합니다(예: 입력 ‘얍’ + 값 ‘얍’ = ‘얍얍’)."),
+    ("본문", "발견물 이름 설정 | 강제 입력", "이름 입력창을 열지 않고 값 문자열을 발견물 이름으로 즉시 설정합니다."),
     ("본문", "아이템 | 획득·상실", "2차 획득 또는 상실을 선택해 지정한 아이템을 지급하거나 제거합니다."),
     ("본문", "행 이동 | 상태값 | 미만 | 대상", "3차 미만과 4차 대상 상태값을 선택합니다. 대상이 기준값보다 낮지 않으면 지정한 행으로 이동합니다."),
     ("본문", "행 이동 | 상태값 | 이하 | 대상", "3차 이하와 4차 대상 상태값을 선택합니다. 대상이 기준값 이하가 아니면 지정한 행으로 이동합니다."),
-    ("본문", "소지금 | 증가·감소", "2차 증가 또는 감소를 선택해 지정한 금액만큼 소지금을 직접 변경합니다."),
+    ("본문", "소지금 | 증가·감소·비교 분기", "증가·감소는 소지금을 직접 변경합니다. 비교 분기는 소지금이 기준값보다 작지 않을 때 지정 행으로 이동합니다."),
     ("본문", "이벤트 플래그 설정", "지정한 전역 이벤트 플래그 ID를 활성화합니다. 플래그별 세부 의미는 아직 확인되지 않았습니다."),
     ("본문", "신도시 생성", "지정한 도시를 신도시로 생성합니다."),
     ("본문", "상태값 | 증감·설정 | 대상", "2차 증감 또는 설정과 3차 대상 상태값을 선택합니다. 수치는 고정값 또는 랜덤 범위로 입력합니다."),
@@ -479,7 +495,7 @@ COMMAND_GUIDE = (
 )
 
 # 이전 내부 이름으로 남아 있는 안내 항목은 실제 UI 분류와 중복되므로 표시하지 않는다.
-HIDDEN_COMMAND_GUIDES = frozenset(("이벤트 조건 판정", "이벤트 내부 참조"))
+HIDDEN_COMMAND_GUIDES = frozenset(("특수 조우 연출 설정", "이벤트 조건 판정", "이벤트 내부 참조"))
 
 # 19/1A/22/26 1C 명령의 대상 번호.  "능력치"라는 옛 표기는 함대 상태,
 # 소지금, 함선 내구도까지 함께 다루는 실제 동작을 설명하지 못하므로 상태값으로 통일한다.
@@ -1374,13 +1390,13 @@ class DisevEditor:
         ttk.Label(classification_row, text="1차:").grid(row=0, column=0, sticky="w")
         self.body_kind_combo = ttk.Combobox(classification_row, textvariable=self.body_command_var, values=tuple(BODY_COMMAND_GROUPS), state="readonly", width=22)
         self.body_kind_combo.grid(row=0, column=1, sticky="w", padx=(5, 10))
-        self.body_kind_combo.bind("<<ComboboxSelected>>", self._body_kind_changed)
+        self.body_kind_combo.bind("<<ComboboxSelected>>", self._body_group_changed)
         self.body_subkind_label = ttk.Label(classification_row, text="2차:")
         self.body_subkind_combo = ttk.Combobox(classification_row, textvariable=self.body_subkind_var, state="readonly", width=14)
-        self.body_subkind_combo.bind("<<ComboboxSelected>>", self._body_kind_changed)
+        self.body_subkind_combo.bind("<<ComboboxSelected>>", self._body_subkind_changed)
         self.body_detail_label = ttk.Label(classification_row, text="3차:")
         self.body_detail_combo = ttk.Combobox(classification_row, textvariable=self.body_detail_var, state="readonly", width=14)
-        self.body_detail_combo.bind("<<ComboboxSelected>>", self._body_kind_changed)
+        self.body_detail_combo.bind("<<ComboboxSelected>>", self._body_detail_changed)
         self.body_fourth_label = ttk.Label(classification_row, text="4차:")
         self.body_fourth_combo = ttk.Combobox(classification_row, textvariable=self.body_hint_var, state="readonly", width=22)
         self.body_fourth_combo.bind("<<ComboboxSelected>>", self._body_kind_changed)
@@ -1415,7 +1431,7 @@ class DisevEditor:
             state="readonly",
             width=22,
         )
-        # 발견물 이름 설정의 대상은 명령 바이트에 이미 기록되어 있다.
+        # 발견물 이름 명령의 대상은 명령 바이트에 이미 기록되어 있다.
         # 선택 UI가 아니라, 해당 대상을 보여 주는 읽기 전용 텍스트로 표시한다.
         self.body_character_entry = NativeEdit(editor, self.body_character_var, width=180)
         self.body_character_entry.configure(state="disabled")
@@ -1500,18 +1516,20 @@ class DisevEditor:
 
         list_frame = ttk.Frame(frame)
         list_frame.pack(fill="both", expand=True)
-        tree = ttk.Treeview(list_frame, columns=("number", "class1", "class2", "class3", "class4", "value"), show="headings", selectmode="browse")
+        tree = ttk.Treeview(list_frame, columns=("number", "class1", "class2", "class3", "class4", "class5", "value"), show="headings", selectmode="browse")
         tree.heading("number", text="No.")
         tree.heading("class1", text="1차")
         tree.heading("class2", text="2차")
         tree.heading("class3", text="3차")
         tree.heading("class4", text="4차")
+        tree.heading("class5", text="5차")
         tree.heading("value", text="값")
         tree.column("number", width=48, anchor="center", stretch=False)
         tree.column("class1", width=110, anchor="w", stretch=False)
         tree.column("class2", width=110, anchor="w", stretch=False)
         tree.column("class3", width=120, anchor="w", stretch=False)
         tree.column("class4", width=140, anchor="w", stretch=False)
+        tree.column("class5", width=110, anchor="w", stretch=False)
         tree.column("value", width=300, anchor="w", stretch=True)
         scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=scrollbar.set)
@@ -2144,6 +2162,11 @@ class DisevEditor:
         elif kind == "특수 수치 판정":
             group = "미니게임"
             subkind = MINIGAME_SUBKIND_BY_TYPE.get(int(token.get("difficulty", -1)), "")
+        elif kind == "특수 조우 연출 설정":
+            group = "특수 조우"
+            subkind = SPECIAL_ENCOUNTER_SUBKIND_BY_VALUE.get(
+                int(value), f"미확인 종류 ({value})",
+            ) if value is not None else ""
         else:
             group, subkind = BODY_KIND_TO_GROUP.get(kind, (kind, ""))
         self.body_command_var.set(group if group in BODY_COMMAND_GROUPS else "")
@@ -2171,6 +2194,7 @@ class DisevEditor:
             self.body_stat_target_var.set(STAT_TARGET_NAMES.get(int(token["stat_id"]), "미사용/미확인"))
         display_value = token.get("value_text", value)
         self.body_value2_var.set("")
+        self.body_range_end_var.set("")
         self.body_random_var.set(False)
         if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS:
             self.body_random_var.set(True)
@@ -2188,12 +2212,16 @@ class DisevEditor:
             self.body_value2_var.set(str(token["threshold"]))
             self.body_range_end_var.set(str(token["runtime_id"]))
         editable = bool(token["editable"])
-        self._body_kind_changed()
+        self._body_kind_change_from_selection = True
+        try:
+            self._body_kind_changed()
+        finally:
+            self._body_kind_change_from_selection = False
         if kind in DIALOGUE_KINDS:
             self._set_body_speaker(bytes(token.get("speaker_prefix", b"")))
         if kind == "대상 지정 대사":
             self._set_body_npc(int(token["character_id"]))
-        if kind == "발견물 이름 설정":
+        if kind in DISCOVERY_NAME_COMMAND_KINDS:
             self._set_body_character(int(token["character_id"]))
         if kind == "발견물 등록/발견 처리":
             self._set_body_character(int(value))
@@ -2214,7 +2242,13 @@ class DisevEditor:
             self.body_value_var.set(str(token["source_stat_id"]))
         if kind in NUMERIC_COMPARE_BRANCH_KINDS:
             self._set_body_stat_target(int(token["stat_id"]))
-            self.body_value2_var.set(str(token.get("compare_value_text", token["compare_value"])))
+            compare_text = str(token.get("compare_value_text") or token["compare_value"])
+            if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS and "~" in compare_text:
+                minimum, maximum = compare_text.split("~", 1)
+                self.body_value2_var.set(minimum)
+                self.body_range_end_var.set(maximum)
+            else:
+                self.body_value2_var.set(compare_text)
         if kind == STATE_REFERENCE_COMPARE_BRANCH_KIND:
             self._set_body_stat_target(int(token["stat_id"]))
             self.body_value2_var.set(str(token["source_stat_id"]))
@@ -2268,6 +2302,32 @@ class DisevEditor:
         self.body_hint_combo.configure(state="readonly" if editable and kind in (HINT_BRANCH_KIND, "힌트 획득") else "disabled")
         self.status_var.set(ui("status_body_selected", index + 1))
 
+    def _body_group_changed(self, _event=None) -> None:
+        """1차 분류를 바꾸면 2·3차 분류를 새 분류의 기본값으로 되돌린다."""
+        self.body_subkind_var.set("")
+        self.body_detail_var.set("")
+        self._reset_body_dependent_targets()
+        self._body_kind_changed()
+
+    def _body_subkind_changed(self, _event=None) -> None:
+        """2차 분류를 바꾸면 3차 분류를 해당 하위 목록의 첫 항목으로 되돌린다."""
+        self.body_detail_var.set("")
+        self._reset_body_dependent_targets()
+        self._body_kind_changed()
+
+    def _body_detail_changed(self, _event=None) -> None:
+        """3차 분류를 바꾸면 그 아래 대상 선택도 새 목록의 기본값으로 되돌린다."""
+        self._reset_body_dependent_targets()
+        self._body_kind_changed()
+
+    def _reset_body_dependent_targets(self) -> None:
+        """상위 분류에 종속된 4차 대상값이 다음 명령으로 새지 않게 비운다."""
+        self.body_character_var.set("")
+        self.body_item_var.set("")
+        self.body_city_var.set("")
+        self.body_stat_target_var.set("")
+        self.body_hint_var.set("")
+
     def _body_kind_changed(self, _event=None) -> None:
         group = self.body_command_var.get()
         subkinds = BODY_COMMAND_GROUPS.get(group, ())
@@ -2309,6 +2369,19 @@ class DisevEditor:
             kind = MOVE_DETAIL_TO_KIND[(self.body_subkind_var.get(), self.body_detail_var.get())]
         else:
             kind = BODY_GROUP_TO_KIND.get((group, self.body_subkind_var.get()), BODY_GROUP_TO_KIND.get((group, ""), group))
+        previous_kind = getattr(self, "_body_builder_kind", None)
+        text_value_kinds = DIALOGUE_KINDS + DISCOVERY_NAME_COMMAND_KINDS
+        if (
+            not getattr(self, "_body_kind_change_from_selection", False)
+            and previous_kind in text_value_kinds
+            and kind not in text_value_kinds
+        ):
+            # 대사/이름 문자열이 수치 전용 EDIT에 남으면 NativeEdit의 숫자
+            # 필터를 우회한 초기값이 된다. 종류 전환 시 함께 비운다.
+            self.body_value_var.set("")
+            self.body_value2_var.set("")
+            self.body_range_end_var.set("")
+        self._body_builder_kind = kind
         if group == "미니게임":
             minigame_type = MINIGAME_TYPE_BY_SUBKIND.get(self.body_subkind_var.get())
             if minigame_type in MINIGAME_EVENT_TYPES:
@@ -2324,11 +2397,13 @@ class DisevEditor:
                 if self.special_difficulty_var.get() != "5":
                     self.special_check_value_var.set("4")
                 self.special_difficulty_var.set("5")
+        elif group == "특수 조우":
+            self.body_value_var.set(str(SPECIAL_ENCOUNTER_VALUE_BY_SUBKIND[self.body_subkind_var.get()]))
         # 2B 형식은 무작위 기준값만 지원하므로 선택 즉시 범위 입력을 켠다.
         if kind == STATE_GREATER_RANDOM_BRANCH_KIND:
             self.body_random_var.set(True)
         is_dialogue = kind in DIALOGUE_KINDS
-        is_character_dialogue = kind == "발견물 이름 설정"
+        is_character_dialogue = kind in DISCOVERY_NAME_COMMAND_KINDS
         is_discovery_registration = kind == "발견물 등록/발견 처리"
         is_discovery_branch = kind in (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND)
         is_npc_branch = kind == NPC_BRANCH_KIND
@@ -2480,7 +2555,7 @@ class DisevEditor:
             self.body_value2_entry.configure(width=14)
             self.body_value2_entry.grid(row=0, column=5, sticky="ew", padx=(5, 0))
         elif is_character_dialogue:
-            # 발견물 이름 설정은 무엇의 이름을 바꾸는지가 먼저 와야 한다.
+            # 발견물 이름 명령은 무엇의 이름을 바꾸는지가 먼저 와야 한다.
             # "대상 발견물 → 이름" 순서로 고정한다.
             self.body_character_label.grid(row=0, column=2, sticky="e")
             self.body_character_entry.grid(row=0, column=3, sticky="ew", padx=(5, 14))
@@ -2631,6 +2706,23 @@ class DisevEditor:
                 value_row, variable, width=520, numeric=not text_entry, allow_negative=allow_negative,
             ).grid(row=0, column=1, sticky="ew", padx=(5, 0))
 
+        def range_value(text: str, *, allow_negative: bool = False, end_label: str) -> None:
+            """값 행에 시작값·랜덤 선택·종료값을 함께 표시한다."""
+            ttk.Label(value_row, text=text).grid(row=0, column=0, sticky="e")
+            NativeEdit(
+                value_row, self.body_value_var, width=240, numeric=True, allow_negative=allow_negative,
+            ).grid(row=0, column=1, sticky="ew", padx=(5, 10))
+            ttk.Checkbutton(
+                value_row, text="랜덤 범위", variable=self.body_random_var,
+                command=self._body_random_changed,
+            ).grid(row=0, column=2, sticky="w", padx=(0, 10))
+            if self.body_random_var.get():
+                ttk.Label(value_row, text=end_label).grid(row=0, column=3, sticky="e")
+                NativeEdit(value_row, self.body_value2_var, width=240, numeric=True).grid(
+                    row=0, column=4, sticky="ew", padx=(5, 0),
+                )
+                value_row.columnconfigure(4, weight=1)
+
         # 1~3차 분류가 실제 명령으로 확정되기 전에는 이전 명령의 입력을 남기지 않는다.
         if kind not in BODY_COMMAND_KINDS:
             return
@@ -2649,9 +2741,15 @@ class DisevEditor:
                 self._body_target_display(hint_id, name)
                 for hint_id, name in self.hint_targets if hint_id >= 0
             ))
+            if not self.body_hint_var.get():
+                first_hint = next((hint_id for hint_id, _name in self.hint_targets if hint_id >= 0), None)
+                if first_hint is not None:
+                    self._set_body_hint(first_hint)
         elif group == "행 이동" and self.body_subkind_var.get() == "상태값":
             aux_label(0, "4차:")
             aux_combo(1, self.body_stat_target_var, tuple(name for _target_id, name in STAT_TARGETS))
+            if not self.body_stat_target_var.get() and STAT_TARGETS:
+                self.body_stat_target_var.set(STAT_TARGETS[0][1])
         elif group == "행 이동" and self.body_subkind_var.get() == "아이템 상태":
             aux_label(0, "4차:")
             aux_combo(1, self.body_item_var, tuple(
@@ -2672,10 +2770,15 @@ class DisevEditor:
             aux_combo(1, self.body_character_var, tuple(
                 self._body_target_display(target_id, name) for target_id, name in targets
             ))
+            if not self.body_character_var.get() and targets:
+                self._set_body_npc(targets[0][0], targets)
 
         if group == "미니게임":
             if MINIGAME_TYPE_BY_SUBKIND.get(self.body_subkind_var.get()) == 5:
                 final_value("원반 수:", self.special_check_value_var)
+            return
+        if group == "특수 조우":
+            # 2차 종류가 00 1E의 u16 값이므로 별도 수치 입력은 노출하지 않는다.
             return
         if kind in DIALOGUE_KINDS:
             if kind == "대상 지정 대사":
@@ -2684,20 +2787,26 @@ class DisevEditor:
                     self._body_target_display(character_id, name)
                     for character_id, name in self.character_targets
                 ))
+                if not self.body_character_var.get() and self.character_targets:
+                    self._set_body_npc(self.character_targets[0][0])
             final_value("대사:", self.body_value_var, text_entry=True)
             return
-        if kind == "발견물 이름 설정":
+        if kind in DISCOVERY_NAME_COMMAND_KINDS:
             aux_label(0, "대상 발견물:")
             aux_combo(1, self.body_character_var, tuple(
                 self._body_target_display(discovery_id, name) for discovery_id, name in self.discovery_targets
             ))
-            final_value("이름:", self.body_value_var, text_entry=True)
+            if not self.body_character_var.get() and self.discovery_targets:
+                self._set_body_character(self.discovery_targets[0][0])
+            final_value("입력 뒤 문자열:" if kind == DISCOVERY_NAME_WAIT_KIND else "이름:", self.body_value_var, text_entry=True)
             return
         if kind in CHARACTER_TARGET_COMMAND_KINDS:
             aux_label(0, "인물:")
             aux_combo(1, self.body_character_var, tuple(
                 self._body_target_display(character_id, name) for character_id, name in self.character_targets
             ))
+            if not self.body_character_var.get() and self.character_targets:
+                self._set_body_npc(self.character_targets[0][0])
             if kind == "인물 상태 비트 해제":
                 final_value("비트 번호:", self.body_value_var)
             return
@@ -2712,6 +2821,8 @@ class DisevEditor:
             aux_combo(1, self.body_city_var, tuple(
                 self._body_target_display(city_id, name) for city_id, name in self.city_targets
             ))
+            if not self.body_city_var.get() and self.city_targets:
+                self._set_body_city(self.city_targets[0][0])
             return
         if kind == "발견물 등록/발견 처리":
             aux_label(0, "발견물:")
@@ -2725,35 +2836,25 @@ class DisevEditor:
                 self._body_target_display(hint_id, name)
                 for hint_id, name in self.hint_targets if hint_id >= 0
             ))
+            if not self.body_hint_var.get():
+                first_hint = next((hint_id for hint_id, _name in self.hint_targets if hint_id >= 0), None)
+                if first_hint is not None:
+                    self._set_body_hint(first_hint)
             return
         if kind == "이벤트 결과 코드":
             aux_label(0, "처리:")
             aux_combo(1, self.body_result_var, tuple(name for _code, name in EVENT_RESULT_CODES))
             return
         if kind in STAT_COMMAND_KINDS:
-            widget = ttk.Checkbutton(aux, text="랜덤 범위", variable=self.body_random_var, command=self._body_random_changed)
-            widget.grid(
-                row=0, column=auxiliary_column + 2, sticky="w", padx=(0, 5),
+            range_value(
+                "값:", allow_negative=kind == "상태값 증감", end_label="종료값:",
             )
-            self.body_classification_controls.append(widget)
-            if self.body_random_var.get():
-                aux_label(3, "종료값:")
-                aux_entry(4, self.body_value2_var)
-            final_value("값:", self.body_value_var, allow_negative=kind == "상태값 증감")
             return
         if kind in STAT_REFERENCE_COMMAND_KINDS:
             final_value("참조 상태값 ID:", self.body_value_var)
             return
         if kind == "날짜 경과":
-            widget = ttk.Checkbutton(aux, text="랜덤 범위", variable=self.body_random_var, command=self._body_random_changed)
-            widget.grid(
-                row=0, column=auxiliary_column, sticky="w", padx=(0, 5),
-            )
-            self.body_classification_controls.append(widget)
-            if self.body_random_var.get():
-                aux_label(1, "종료 일수:")
-                aux_entry(2, self.body_value2_var)
-            final_value("일수:", self.body_value_var)
+            range_value("일수:", end_label="종료 일수:")
             return
         if kind == "소지금 비교 분기":
             aux_label(0, "소지금 기준값:")
@@ -2771,8 +2872,14 @@ class DisevEditor:
             final_value("외부 분기값:", self.body_value_var)
             return
         if kind in NUMERIC_COMPARE_BRANCH_KINDS:
-            aux_label(2, "기준값:")
-            aux_entry(3, self.body_value2_var)
+            if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS:
+                aux_label(2, "최소값:")
+                aux_entry(3, self.body_value2_var)
+                aux_label(4, "최대값:")
+                aux_entry(5, self.body_range_end_var)
+            else:
+                aux_label(2, "기준값:")
+                aux_entry(3, self.body_value2_var)
             final_value("이동할 행:", self.body_value_var)
             return
         if kind == STATE_REFERENCE_COMPARE_BRANCH_KIND:
@@ -2802,6 +2909,8 @@ class DisevEditor:
             aux_combo(3, self.body_city_var, tuple(
                 self._body_target_display(city_id, name) for city_id, name in self.city_targets
             ))
+            if not self.body_city_var.get() and self.city_targets:
+                self._set_body_city(self.city_targets[0][0])
             final_value("이동할 행:", self.body_value_var)
             return
         if kind == CHOICE_BRANCH_KIND:
@@ -2834,6 +2943,9 @@ class DisevEditor:
         if kind == "특수 상태 처리":
             final_value("원본 인수:", self.body_value_var)
             return
+        if kind == "대기":
+            final_value("초:", self.body_value_var)
+            return
         final_value("값:", self.body_value_var)
 
     def _hide_disabled_body_inputs(self) -> None:
@@ -2853,7 +2965,7 @@ class DisevEditor:
             editor.columnconfigure(column, weight=1)
 
         is_dialogue = kind in DIALOGUE_KINDS
-        is_character_dialogue = kind == "발견물 이름 설정"
+        is_character_dialogue = kind in DISCOVERY_NAME_COMMAND_KINDS
         is_choice_branch = kind == CHOICE_BRANCH_KIND
         is_special_value_check = kind == "특수 수치 판정"
         is_date_passage = kind == "날짜 경과"
@@ -3327,16 +3439,17 @@ class DisevEditor:
                 "value": numeric_value,
                 "editable": True,
             }
-        if kind == "발견물 이름 설정":
+        if kind in DISCOVERY_NAME_COMMAND_KINDS:
             if character_id is None or not 0 <= character_id <= 65535:
                 raise ValueError("발견물 ID가 올바르지 않습니다.")
-            encoded = value.encode("cp949")
+            encoded = encode_dialogue_text(value)
             if b"\0" in encoded:
                 raise ValueError("대사에는 NUL 문자를 넣을 수 없습니다.")
             packed_id = struct.pack("<H", character_id)
             content = speaker_prefix + encoded
-            if dialogue_layout == "id_first":
+            if kind == DISCOVERY_NAME_WAIT_KIND:
                 raw = b"\x1F\x0B" + packed_id + b"\x0A" + content + b"\0"
+                dialogue_layout = "id_first"
             else:
                 raw = b"\x1F\x0A" + content + b"\0\x0B" + packed_id
                 dialogue_layout = "text_first"
@@ -3593,7 +3706,7 @@ class DisevEditor:
                     first_text, last_text = (part.strip() for part in str(compare_value).split("~", 1))
                     first, last = int(first_text), int(last_text)
                 except (ValueError, AttributeError) as exc:
-                    raise ValueError("기준 범위는 예: 60~79 형식으로 입력하세요.") from exc
+                    raise ValueError("기준값의 최소값과 최대값을 각각 입력하세요.") from exc
                 if not 0 <= first <= last <= 0xFFFFFFFF:
                     raise ValueError("기준 범위는 0~4,294,967,295 범위여야 합니다.")
                 opcode = {
@@ -3738,7 +3851,7 @@ class DisevEditor:
         if kind == "대기":
             numeric_value = int(str(value).strip())
             if not 0 <= numeric_value <= 0xFFFFFFFF:
-                raise ValueError("대기 값은 0~4,294,967,295 범위여야 합니다.")
+                raise ValueError("대기 시간(초)은 0~4,294,967,295 범위여야 합니다.")
             return {
                 "kind": kind,
                 "raw": b"\x29\x1A" + struct.pack("<I", numeric_value),
@@ -3798,7 +3911,7 @@ class DisevEditor:
             messagebox.showerror(ui("body_add_failed"), ui("select_command_to_add"), parent=self.root)
             return
         try:
-            character_id = self._body_npc_id(self.sponsor_targets if self.body_detail_var.get() == "후원자" else self.character_targets) if kind == NPC_BRANCH_KIND else self._body_npc_id() if kind == "대상 지정 대사" or kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_city_id() if kind == CITY_BRANCH_KIND else int(self.body_range_end_var.get().strip()) if kind == RUNTIME_REFERENCE_BRANCH_KIND else self._body_character_id() if kind in ("발견물 이름 설정", DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
+            character_id = self._body_npc_id(self.sponsor_targets if self.body_detail_var.get() == "후원자" else self.character_targets) if kind == NPC_BRANCH_KIND else self._body_npc_id() if kind == "대상 지정 대사" or kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_city_id() if kind == CITY_BRANCH_KIND else int(self.body_range_end_var.get().strip()) if kind == RUNTIME_REFERENCE_BRANCH_KIND else self._body_character_id() if kind in DISCOVERY_NAME_COMMAND_KINDS + (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
             speaker_prefix = self._body_speaker_prefix() if kind in DIALOGUE_KINDS else b""
             stat_id = self._body_stat_id() if kind in STAT_COMMAND_KINDS + STAT_REFERENCE_COMMAND_KINDS + NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND,) else None
             token = self._new_body_token(
@@ -3806,7 +3919,7 @@ class DisevEditor:
                 hint_id=self._body_hint_id() if kind in (HINT_BRANCH_KIND, "힌트 획득") else None,
                 item_id=self._body_item_id() if kind in (ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND) else None,
                 hint_active=self.body_hint_state_var.get() == "활성", speaker_prefix=speaker_prefix,
-                compare_value=self.special_difficulty_var.get().strip() if kind == "특수 수치 판정" else int(self.body_value_var.get().strip()) if kind in STAT_REFERENCE_COMMAND_KINDS else f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind == YEAR_RANGE_BRANCH_KIND else self.body_value2_var.get().strip() if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND) else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND, "소지금 비교 분기", RUNTIME_REFERENCE_BRANCH_KIND) else None,
+                compare_value=self.special_difficulty_var.get().strip() if kind == "특수 수치 판정" else int(self.body_value_var.get().strip()) if kind in STAT_REFERENCE_COMMAND_KINDS else f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_RANGE_BRANCH_KIND,) else self.body_value2_var.get().strip() if kind in (YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND) else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND, "소지금 비교 분기", RUNTIME_REFERENCE_BRANCH_KIND) else None,
                 choice_value=int(self.body_value2_var.get().strip()) if kind == CHOICE_BRANCH_KIND else None,
                 npc_type=0x12 if kind == NPC_BRANCH_KIND and self.body_detail_var.get() == "후원자" else 0x0D,
             )
@@ -3836,7 +3949,7 @@ class DisevEditor:
             messagebox.showerror(ui("body_insert_failed"), ui("select_command_to_insert"), parent=self.root)
             return
         try:
-            character_id = self._body_npc_id(self.sponsor_targets if self.body_detail_var.get() == "후원자" else self.character_targets) if kind == NPC_BRANCH_KIND else self._body_npc_id() if kind == "대상 지정 대사" or kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_city_id() if kind == CITY_BRANCH_KIND else self._body_character_id() if kind in ("발견물 이름 설정", DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
+            character_id = self._body_npc_id(self.sponsor_targets if self.body_detail_var.get() == "후원자" else self.character_targets) if kind == NPC_BRANCH_KIND else self._body_npc_id() if kind == "대상 지정 대사" or kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_city_id() if kind == CITY_BRANCH_KIND else self._body_character_id() if kind in DISCOVERY_NAME_COMMAND_KINDS + (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
             speaker_prefix = self._body_speaker_prefix() if kind in DIALOGUE_KINDS else b""
             stat_id = self._body_stat_id() if kind in STAT_COMMAND_KINDS + STAT_REFERENCE_COMMAND_KINDS + NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND,) else None
             token = self._new_body_token(
@@ -3844,7 +3957,7 @@ class DisevEditor:
                 hint_id=self._body_hint_id() if kind in (HINT_BRANCH_KIND, "힌트 획득") else None,
                 item_id=self._body_item_id() if kind in (ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND) else None,
                 hint_active=self.body_hint_state_var.get() == "활성", speaker_prefix=speaker_prefix,
-                compare_value=self.special_difficulty_var.get().strip() if kind == "특수 수치 판정" else int(self.body_value_var.get().strip()) if kind in STAT_REFERENCE_COMMAND_KINDS else f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind == YEAR_RANGE_BRANCH_KIND else self.body_value2_var.get().strip() if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_BRANCH_KIND,) else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND,) else None,
+                compare_value=self.special_difficulty_var.get().strip() if kind == "특수 수치 판정" else int(self.body_value_var.get().strip()) if kind in STAT_REFERENCE_COMMAND_KINDS else f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_RANGE_BRANCH_KIND,) else self.body_value2_var.get().strip() if kind == YEAR_BRANCH_KIND else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND,) else None,
                 choice_value=int(self.body_value2_var.get().strip()) if kind == CHOICE_BRANCH_KIND else None,
                 npc_type=0x12 if kind == NPC_BRANCH_KIND and self.body_detail_var.get() == "후원자" else 0x0D,
             )
@@ -4467,8 +4580,9 @@ class DisevEditor:
                 })
                 i += 4
                 continue
-            # 1F는 발견물 런타임 레코드의 이름을 바꾸는 복합 명령이다.
-            # 두 배열 형식이 있으며, 편집 후에도 읽어 온 형식을 보존한다.
+            # 1F는 발견물 런타임 레코드의 이름을 다루는 복합 명령이다.
+            # 1F 0B는 게임 중 입력 문자열 뒤에 이 값을 붙이고, 1F 0A는
+            # 이 값을 이름으로 바로 설정한다. 편집 후에도 읽어 온 형식을 보존한다.
             if i + 5 <= len(body) and body[i : i + 2] == b"\x1F\x0B" and body[i + 4] == 0x0A:
                 character_id = struct.unpack_from("<H", body, i + 2)[0]
                 text_start = i + 5
@@ -4479,7 +4593,7 @@ class DisevEditor:
                     speaker_prefix = source[: marker + 2] if marker >= 0 else b""
                     _speaker, text = disev.decode_dialogue(source)
                     tokens.append({
-                        "kind": "발견물 이름 설정",
+                        "kind": DISCOVERY_NAME_WAIT_KIND,
                         "raw": body[i : end + 1],
                         "value": text,
                         "character_id": character_id,
@@ -4499,7 +4613,7 @@ class DisevEditor:
                     speaker_prefix = source[: marker + 2] if marker >= 0 else b""
                     _speaker, text = disev.decode_dialogue(source)
                     tokens.append({
-                        "kind": "발견물 이름 설정",
+                        "kind": DISCOVERY_NAME_FORCE_KIND,
                         "raw": body[i : end + 4],
                         "value": text,
                         "character_id": character_id,
@@ -4582,7 +4696,8 @@ class DisevEditor:
                 tokens.append({"kind": "CG 애니메이션 재생", "raw": body[i:i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
-            # 00 1E [u16]: 동물·자연현상·유령선 등 특수 조우의 연출 종류를 지정한다.
+            # 00 1E [u16]: 백경(0)·돌고래(1)·날치(2)·유령선(3)·오로라(4)·
+            # 플라밍고(5)·모르포 나비(6)·유빙/빙산(7/8) 특수 조우 연출을 재생한다.
             if i + 4 <= len(body) and body[i:i + 2] == b"\x00\x1E":
                 tokens.append({"kind": "특수 조우 연출 설정", "raw": body[i:i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
@@ -4802,7 +4917,7 @@ class DisevEditor:
                     tokens.append({"kind": "미확인 명령/데이터", "raw": body[i:i + 10], "value": None, "editable": False})
                 i += 10
                 continue
-            # 29 1A [u32]: 내부 시간 단위만큼 다음 명령을 지연한다.
+            # 29 1A [u32]: 값 1당 약 1초 동안 다음 명령을 지연한다.
             if i + 6 <= len(body) and body[i:i + 2] == b"\x29\x1A":
                 tokens.append({"kind": "대기", "raw": body[i:i + 6], "value": struct.unpack_from("<I", body, i + 2)[0], "editable": True})
                 i += 6
@@ -5047,7 +5162,7 @@ class DisevEditor:
                 token["speaker_prefix"] = speaker_prefix
                 token["flag"] = flag
                 token["kind"] = kind
-            elif kind == "발견물 이름 설정":
+            elif kind in DISCOVERY_NAME_COMMAND_KINDS:
                 updated = self._new_body_token(
                     kind,
                     self.body_value_var.get(),
@@ -5111,7 +5226,7 @@ class DisevEditor:
                     character_id=self._body_character_id() if kind in (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else self._body_city_id() if kind == CITY_BRANCH_KIND else self._body_npc_id(self.sponsor_targets if self.body_detail_var.get() == "후원자" else self.character_targets) if kind == NPC_BRANCH_KIND else int(self.body_range_end_var.get().strip()) if kind == RUNTIME_REFERENCE_BRANCH_KIND else None,
                     npc_type=0x12 if kind == NPC_BRANCH_KIND and self.body_detail_var.get() == "후원자" else 0x0D,
                     stat_id=self._body_stat_id() if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND,) else None,
-                    compare_value=f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind == YEAR_RANGE_BRANCH_KIND else self.body_value2_var.get().strip() if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND) else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND, "소지금 비교 분기", RUNTIME_REFERENCE_BRANCH_KIND) else None,
+                    compare_value=f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_RANGE_BRANCH_KIND,) else self.body_value2_var.get().strip() if kind in (YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND) else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND, "소지금 비교 분기", RUNTIME_REFERENCE_BRANCH_KIND) else None,
                     choice_value=int(self.body_value2_var.get().strip()) if kind == CHOICE_BRANCH_KIND else None,
                 )
                 # 잉카제국의 16번 명령은 43 2E 1C + 상태값 + 00[u16] 형식이다.
@@ -5169,10 +5284,15 @@ class DisevEditor:
             self.body_tree.focus(str(selected))
         self.root.after_idle(lambda: self._autosize_tree_columns(self.body_tree, skip=("value",)))
 
-    def _body_display_levels(self, token: dict[str, object]) -> tuple[str, str, str, str]:
+    def _body_display_levels(self, token: dict[str, object]) -> tuple[str, str, str, str, str]:
         """본문 목록의 명령 분류를 최대 4개 열로 나눠 표시한다."""
         kind = str(token["kind"])
-        if kind == "이벤트 판정":
+        if kind == "특수 조우 연출 설정":
+            group = "특수 조우"
+            subkind = SPECIAL_ENCOUNTER_SUBKIND_BY_VALUE.get(
+                int(token.get("value", -1)), f"미확인 종류 ({token.get('value', '?')})",
+            )
+        elif kind == "이벤트 판정":
             group = "미니게임"
             subkind = MINIGAME_SUBKIND_BY_TYPE.get(int(token.get("value", -1)), f"미확인 종류 ({token.get('value', '?')})")
         elif kind == "특수 수치 판정":
@@ -5182,6 +5302,7 @@ class DisevEditor:
             group, subkind = BODY_KIND_TO_GROUP.get(kind, (kind, ""))
         detail = BODY_KIND_TO_DETAIL.get(kind, "")
         fourth = ""
+        fifth = ""
         if kind in DIALOGUE_KINDS:
             prefix = bytes(token.get("speaker_prefix", b""))
             detail = next((name for name, value in self.dialogue_speakers.items() if value == prefix), "화자 미확인")
@@ -5223,6 +5344,10 @@ class DisevEditor:
             fourth = next((name for candidate_id, name in self.item_targets if candidate_id == item_id), f"아이템 {item_id}")
         elif kind in NUMERIC_COMPARE_BRANCH_KINDS:
             fourth = STAT_TARGET_NAMES.get(int(token.get("stat_id", -1)), "대상 미확인")
+            fifth = str(token.get("compare_value_text") or token.get("compare_value", "-"))
+        elif kind == "소지금 비교 분기":
+            # 1차 소지금, 2차 비교 분기 다음의 기준값이므로 3차 열에 둔다.
+            detail = str(token.get("compare_value", "-"))
         elif kind == STATE_REFERENCE_COMPARE_BRANCH_KIND:
             detail = "상태값끼리 비교"
             target_name = STAT_TARGET_NAMES.get(int(token.get("stat_id", -1)), f"상태값 {token.get('stat_id', '?')}")
@@ -5230,7 +5355,7 @@ class DisevEditor:
             fourth = f"{target_name} / {source_name}"
         elif kind in STAT_REFERENCE_COMMAND_KINDS:
             detail = STAT_TARGET_NAMES.get(int(token.get("stat_id", -1)), "대상 미확인")
-        return str(group), str(subkind), str(detail), str(fourth)
+        return str(group), str(subkind), str(detail), str(fourth), str(fifth)
 
     def _body_display_value(self, token: dict[str, object]) -> str:
         """본문 목록에서는 참조 ID 대신 사람이 읽을 수 있는 이름을 보여 준다."""
@@ -5241,6 +5366,8 @@ class DisevEditor:
         if value is None:
             return "-"
         kind = str(token["kind"])
+        if kind == "특수 조우 연출 설정":
+            return "-"
         if kind == "이벤트 판정":
             return "-"
         if kind == "특수 수치 판정":

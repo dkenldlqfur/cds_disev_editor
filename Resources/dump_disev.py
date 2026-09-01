@@ -422,14 +422,14 @@ def decode_dialogue(data: bytes) -> tuple[str | None, str]:
             continue
         if i + 4 <= len(source) and source[i : i + 3] == b"\x81\x93\x82":
             # ％ｓ is replaced by the player name at runtime. 이름 지정
-            # 이벤트의 ％Ｗ/％Ｘ/％Ｍ은 각각 "협", "오스트레일리아",
+            # 이벤트의 ％Ｗ/％Ｘ/％Ｍ은 각각 "협", "대륙",
             # "남방대륙"으로 전개된다. 나머지 자리표만 명시 토큰으로 남긴다.
             if source[i + 3] == 0x93:
                 cooked.extend("제독".encode("cp949"))
             elif source[i + 3] == 0x76:
                 cooked.extend("협".encode("cp949"))
             elif source[i + 3] == 0x77:
-                cooked.extend("오스트레일리아".encode("cp949"))
+                cooked.extend("대륙".encode("cp949"))
             elif source[i + 3] == 0x6C:
                 cooked.extend("남방대륙".encode("cp949"))
             else:
