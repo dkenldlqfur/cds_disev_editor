@@ -88,6 +88,12 @@ def record_has_name(exe: bytes, offset: int, image_base: int, sections: list[PeS
 
 
 def locate_discovery_record(exe: bytes, name: str, game_id: int) -> tuple[int, int, list[PeSection]]:
+    """발견물 연속 테이블에 실제로 속하는 기준 레코드를 찾는다.
+
+    일부 패치 EXE에는 원본 발견물 레코드의 단독 복사본이 함께 남아 있다.
+    이름·게임 ID·문자열 포인터가 같아도 그 복사본은 0x5C 연속 테이블을
+    이루지 않으므로, 연속 테이블 검증까지 통과한 후보만 사용한다.
+    """
     image_base, sections = parse_pe_sections(exe)
     target_name = name.encode("cp949") + b"\0"
     game_id_bytes = struct.pack("<I", game_id)
@@ -104,9 +110,21 @@ def locate_discovery_record(exe: bytes, name: str, game_id: int) -> tuple[int, i
         name_offset = va_to_file_offset(u32(exe, record_offset), image_base, sections)
         if name_offset is not None and exe.startswith(target_name, name_offset):
             matches.append(record_offset)
-    if len(matches) != 1:
-        raise ValueError(f"'{name}' (게임 ID {game_id}) 레코드를 하나로 특정하지 못했습니다: {matches}")
-    return matches[0], image_base, sections
+    table_matches: list[int] = []
+    for record_offset in matches:
+        try:
+            # 실제 발견물 테이블은 적어도 100개 이상의 0x5C 레코드가 연속한다.
+            if len(discovery_table(exe, record_offset, image_base, sections)) >= 100:
+                table_matches.append(record_offset)
+        except ValueError:
+            # 패치 영역에 남은 단독 레코드·잘린 복사본은 후보에서 제외한다.
+            continue
+    if len(table_matches) != 1:
+        raise ValueError(
+            f"'{name}' (게임 ID {game_id}) 발견물 테이블을 하나로 특정하지 못했습니다: "
+            f"후보 {matches}, 테이블 후보 {table_matches}"
+        )
+    return table_matches[0], image_base, sections
 
 
 def discovery_table(exe: bytes, target_offset: int, image_base: int, sections: list[PeSection]) -> list[int]:

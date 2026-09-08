@@ -4193,6 +4193,9 @@ class DisevEditor:
         if children:
             self.tree.selection_set(children[0])
             self.tree.focus(children[0])
+            # Treeview의 프로그램 선택은 <<TreeviewSelect>>를 보장하지 않는다.
+            # 파일을 연 직후에도 첫 발견물의 조건·본문을 바로 표시한다.
+            self._select_part()
 
     def _load_exe_mapping(self, path: Path, quiet: bool) -> None:
         try:
