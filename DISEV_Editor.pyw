@@ -29,6 +29,8 @@ from tkinter import filedialog, messagebox, ttk
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from PIL import Image, ImageTk
+
 from Resources import dump_disev as disev
 
 
@@ -191,19 +193,31 @@ CONDITION_GROUP_TO_KIND = {
 CONDITION_KIND_TO_GROUP = {kind: group for group, kind in CONDITION_GROUP_TO_KIND.items()}
 
 BODY_COMMAND_KINDS = (
-    "대사", "예/아니오 대사", "다중 선택지 대사", "대상 지정 대사", "AVI 재생", "발견물 등록/발견 처리", "아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리",
-    "음원 재생", "음원 정지", "DSTILL 이미지 표시", "EVSTILL 이미지 표시", "CG 애니메이션 재생", "특수 조우 연출 설정", "특수 수치 판정", "해상 전투", "인물 이벤트 실행", "인물 이벤트 실행 (보조)", "이벤트 분류 설정", "이벤트 조건 판정", "이벤트 내부 참조", "주인공 성격 판정", "이벤트 판정", "힌트 획득", "대기", "날짜 경과", "발견물 이름 입력 대기", "발견물 이름 강제 입력",
+    "대사", "예/아니오 대사", "다중 선택지 대사", "도시 임시 문자열 등록", "AVI 재생", "발견물 등록/발견 처리", "아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리",
+    "음원 재생", "음원 정지", "DSTILL 이미지 표시", "EVSTILL 이미지 표시", "CG 애니메이션 재생", "특수 조우 연출 설정", "특수 수치 판정", "해상 전투", "일기토 실행", "육상전 실행", "일기토 연출 세트 설정", "이벤트 조건 판정", "이벤트 내부 참조", "델포이 신탁 출력", "이벤트 판정", "힌트 획득", "대기", "날짜 경과", "발견물 이름 입력 대기", "발견물 이름 강제 입력",
     "신도시 생성",
-    "이미지 표시 종료", "대화창 숨김", "대화창 표시", "결과 거짓 설정", "결과 참 설정", "결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "특수 분기", "선택지 결과 시 이동", "힌트 상태 조건 이동", "발견물 상태 조건 이동", "발견물 등록 판정 이동", "아이템 소지 조건 이동", "아이템 미소지 조건 이동", "기준 연도 조건 이동", "연도 상한 조건 이동", "연도 범위 조건 이동", "도시 조건 이동", "NPC 조건 이동", "상태값 초과 조건 이동", "상태값 초과 조건 이동 (고정 기준)", "상태값 미만 조건 이동", "상태값 이하 조건 이동", "상태값 미만 조건 이동 (무작위 기준)", "상태값 이하 조건 이동 (무작위 기준)", "능력치 비교 분기", "능력치 비교3 분기", "상태값 참조 비교 조건 이동", "상태값 특수 비교 조건 이동", "소지금 비교 분기", "특수 참조 조건 이동", "STORY0.CDS 외 분기", "STORY1.CDS 외 분기",
+    "이미지 표시 종료", "대화창 숨김", "대화창 표시", "결과 거짓 설정", "게임 오버", "결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "부관 미고용 조건", "선택지 결과 시 이동", "힌트 상태 조건 이동", "발견물 상태 조건 이동", "발견물 등록 판정 이동", "아이템 소지 조건 이동", "아이템 미소지 조건 이동", "기준 연도 조건 이동", "연도 상한 조건 이동", "연도 범위 조건 이동", "도시 조건 이동", "NPC 조건 이동", "상태값 초과 조건 이동", "상태값 초과 조건 이동 (고정 기준)", "상태값 미만 조건 이동", "상태값 이하 조건 이동", "상태값 미만 조건 이동 (무작위 기준)", "상태값 이하 조건 이동 (무작위 기준)", "능력치 비교 분기", "능력치 비교3 분기", "상태값 참조 비교 조건 이동", "상태값 특수 비교 조건 이동", "소지금 비교 분기", "특수 참조 조건 이동", "STORY0.CDS 외 분기", "STORY1.CDS 외 분기",
     "소지금 증가", "소지금 감소", "이벤트 플래그 설정",
-    "상태값 증감", "상태값 설정", "상태값 참조 증가", "내부 상태 설정", "특수 상태 처리", "인물 참조 설정", "인물 상태 처리 1", "인물 상태 처리 2", "인물 상태 처리 3", "인물 상태 처리 4", "인물 상태 비트 해제", "인물 선택 판정", "인물 위치 판정", "이벤트 결과 코드",
+    "상태값 증감", "상태값 설정", "상태값 참조 증가", "국가 멸망 처리", "특수 상태 처리", "인물 상태 처리 1", "인물 상태 처리 2", "도시 국적 변경", "도시 점령지 설정", "도시 점령지 해제", "도시 제거", "도시 시설 제거", "도시 상태 판정", "이벤트 결과 코드",
 )
-DIALOGUE_KINDS = ("대사", "예/아니오 대사", "다중 선택지 대사", "대상 지정 대사")
+DIALOGUE_KINDS = ("대사", "예/아니오 대사", "다중 선택지 대사")
+CITY_STRING_COMMAND_KIND = "도시 임시 문자열 등록"
+# `화자명 + 81 46` 접두사가 있는 대사는 EXE가 화자별 경로로 처리한다.
+# 검사관은 계약/동행하지 않은 실제 플레이에서 해당 대사 행 전체가 표시되지
+# 않고 다음 행으로 진행하는 것을 확인했다. 다른 화자는 같은 동작을 아직
+# 일반화하지 않으므로, 확인된 화자만 목록에 명시한다.
+CONDITIONAL_DIALOGUE_SPEAKER_NOTES = {
+    "검사관": "계약/동행 필요",
+}
 DISCOVERY_NAME_WAIT_KIND = "발견물 이름 입력 대기"
 DISCOVERY_NAME_FORCE_KIND = "발견물 이름 강제 입력"
 DISCOVERY_NAME_COMMAND_KINDS = (DISCOVERY_NAME_WAIT_KIND, DISCOVERY_NAME_FORCE_KIND)
+TEXT_VALUE_COMMAND_KINDS = DIALOGUE_KINDS + (CITY_STRING_COMMAND_KIND,) + DISCOVERY_NAME_COMMAND_KINDS
 CHARACTER_TARGET_COMMAND_KINDS = (
-    "인물 참조 설정", "인물 상태 처리 1", "인물 상태 처리 2", "인물 상태 처리 3", "인물 상태 처리 4", "인물 상태 비트 해제", "인물 선택 판정", "인물 위치 판정",
+    "인물 상태 처리 1", "인물 상태 처리 2",
+)
+CITY_TARGET_COMMAND_KINDS = (
+    "도시 국적 변경", "도시 점령지 설정", "도시 점령지 해제", "도시 제거", "도시 시설 제거", "도시 상태 판정",
 )
 MINIGAME_SUBKINDS = (
     "성배 퍼즐", "스핑크스 퀴즈", "미궁 64 퍼즐", "낚시 게임",
@@ -212,6 +226,25 @@ MINIGAME_SUBKINDS = (
 MINIGAME_TYPE_BY_SUBKIND = {name: index for index, name in enumerate(MINIGAME_SUBKINDS)}
 MINIGAME_SUBKIND_BY_TYPE = {index: name for name, index in MINIGAME_TYPE_BY_SUBKIND.items()}
 MINIGAME_EVENT_TYPES = frozenset((0, 1, 2, 3, 6))
+EVENT_CONDITION_SUBKIND_BY_CODE = {
+    18: "운 판정",
+    6: "무력 판정",
+    21: "지력 판정",
+    23: "신앙심 판정",
+}
+EVENT_CONDITION_CODE_BY_SUBKIND = {
+    name: code for code, name in EVENT_CONDITION_SUBKIND_BY_CODE.items()
+}
+EVENT_CONDITION_RESULT_TEXT_BY_CODE = {
+    6: "R(100) ≤ 무력+1 → 참/거짓",
+    18: "R(100) ≤ 운+1 → 참/거짓",
+    21: "R(100) ≤ 지력+1 → 참/거짓",
+    23: "R(100) ≤ 신앙심+1 → 참/거짓",
+}
+UNSUPPORTED_EVENT_CONDITION_SUBKIND = "미지원 판정 ID (원본 보존)"
+# 정상 명령 작성 시 선택할 수 있는 판정은 EXE에 구현된 네 종류뿐이다.
+# 미지원 ID 표시는 변조된 원본을 읽었을 때만 동적으로 덧붙인다.
+EVENT_CONDITION_SUBKINDS = tuple(EVENT_CONDITION_SUBKIND_BY_CODE.values())
 SPECIAL_ENCOUNTER_TYPES = (
     (0, "백경"), (1, "돌고래"), (2, "날치"), (3, "유령선"),
     (4, "오로라"), (5, "플라밍고 떼"), (6, "모르포 나비 떼"), (7, "유빙·빙산"),
@@ -219,20 +252,24 @@ SPECIAL_ENCOUNTER_TYPES = (
 SPECIAL_ENCOUNTER_SUBKINDS = tuple(name for _value, name in SPECIAL_ENCOUNTER_TYPES)
 SPECIAL_ENCOUNTER_VALUE_BY_SUBKIND = dict((name, value) for value, name in SPECIAL_ENCOUNTER_TYPES)
 SPECIAL_ENCOUNTER_SUBKIND_BY_VALUE = dict(SPECIAL_ENCOUNTER_TYPES)
+BATTLEFIELD_SUBKINDS = ("현재 위치 지형 (자동)", "석조/도시 전장 (고정)")
+BATTLEFIELD_OPCODE_BY_SUBKIND = {"석조/도시 전장 (고정)": 0x08, "현재 위치 지형 (자동)": 0x0D}
+BATTLEFIELD_SUBKIND_BY_OPCODE = {value: name for name, value in BATTLEFIELD_OPCODE_BY_SUBKIND.items()}
 BODY_COMMAND_GROUPS: dict[str, tuple[str, ...]] = {
     "발견": (),
     "아이템": ("획득", "소지품 추가", "소지품 제거"),
     "음원": ("재생", "정지"),
     "미디어": ("이미지", "동영상"),
-    "대사": ("일반", "예/아니오", "다중 선택", "대상 지정"),
-    "이벤트 상태": ("아이템 처리", "값 2 설정"), "특수 조우": SPECIAL_ENCOUNTER_SUBKINDS,
-    "해상 전투": (), "인물 이벤트": ("실행 방식 2", "실행 방식 3", "실행 모드 설정"),
-    "조건 판정": ("숨은 수치 확률",), "주인공 성격 판정": (), "미니게임": MINIGAME_SUBKINDS, "힌트 획득": (),
+    "대사": ("일반", "예/아니오", "다중 선택"),
+    "도시 이벤트": ("임시 문자열 등록", "국적 변경", "점령지 설정", "점령지 해제", "도시 제거", "시설 제거", "상태 판정"),
+    "이벤트 상태": ("아이템 처리",), "국가/세력 상태": ("멸망 처리",), "특수 조우": SPECIAL_ENCOUNTER_SUBKINDS,
+    "해상 전투": (), "특수 전투": ("일기토 실행", "육상전 실행", "일기토 연출 세트 설정"),
+    "조건 판정": EVENT_CONDITION_SUBKINDS, "델포이 신탁 출력": (), "미니게임": MINIGAME_SUBKINDS, "힌트 획득": (),
     "대기": (), "날짜 경과": (), "발견물 이름 설정": ("입력 대기", "강제 입력"), "신도시 생성": (), "대화창": ("숨김", "표시"),
-    "결과 설정": ("거짓", "참"),
-    "행 이동": ("이전 조건", "이전 판정 참", "특수 분기", "선택지 결과", "힌트 상태", "발견물", "아이템 상태", "기준 연도", "연도 상한", "연도 범위", "도시 조건", "NPC 조건", "상태값", "파트 오프셋"),
-    "상태값": ("증감", "설정", "증감 (상태값 참조)"),
-    "인물 상태": ("이벤트 인물 참조 바인딩", "런타임 상태 초기화", "통역 고용/교체", "상태 비트 02 설정", "상태 비트 04 설정", "상태 비트 04 해제", "선택 판정", "위치 판정"),
+    "결과 설정": ("거짓",), "게임 오버": (),
+    "행 이동": ("이전 조건", "이전 판정 참", "부관 미고용 조건", "선택지 결과", "힌트 상태", "발견물", "아이템 상태", "기준 연도", "연도 상한", "연도 범위", "도시 조건", "NPC 조건", "상태값", "강제 이동"),
+    "상태값": ("증감", "설정", "증감 (참조 수치)"),
+    "인물 상태": ("런타임 상태 초기화", "통역 고용/교체"),
     "소지금": ("증가", "감소", "비교 분기"), "외부 분기": ("STORY0.CDS", "STORY1.CDS"), "이벤트 플래그 설정": (),
     "인원": ("투입 인원 절반",), "이벤트 결과 코드": (),
 }
@@ -242,7 +279,7 @@ BODY_GROUP_TO_KIND = {
     ("아이템", "소지품 추가"): "이벤트 아이템 등록",
     ("아이템", "소지품 제거"): "아이템 상실",
     ("이벤트 상태", "아이템 처리"): "이벤트 아이템 처리",
-    ("이벤트 상태", "값 2 설정"): "내부 상태 설정",
+    ("국가/세력 상태", "멸망 처리"): "국가 멸망 처리",
     **{("특수 조우", name): "특수 조우 연출 설정" for name in SPECIAL_ENCOUNTER_SUBKINDS},
     ("음원", "재생"): "음원 재생", ("음원", "정지"): "음원 정지",
     ("미니게임", "성배 퍼즐"): "이벤트 판정",
@@ -254,22 +291,33 @@ BODY_GROUP_TO_KIND = {
     ("미니게임", "화살표 입방체 퍼즐"): "이벤트 판정",
     ("미디어", "DSTILL"): "DSTILL 이미지 표시", ("미디어", "EVSTILL"): "EVSTILL 이미지 표시",
     ("미디어", "종료"): "이미지 표시 종료", ("미디어", "CG"): "CG 애니메이션 재생", ("미디어", "AVI"): "AVI 재생",
-    ("대사", "일반"): "대사", ("대사", "예/아니오"): "예/아니오 대사", ("대사", "다중 선택"): "다중 선택지 대사", ("대사", "대상 지정"): "대상 지정 대사",
+    ("대사", "일반"): "대사", ("대사", "예/아니오"): "예/아니오 대사", ("대사", "다중 선택"): "다중 선택지 대사",
+    ("도시 이벤트", "임시 문자열 등록"): CITY_STRING_COMMAND_KIND,
+    ("도시 이벤트", "국적 변경"): "도시 국적 변경",
+    ("도시 이벤트", "점령지 설정"): "도시 점령지 설정",
+    ("도시 이벤트", "점령지 해제"): "도시 점령지 해제",
+    ("도시 이벤트", "도시 제거"): "도시 제거",
+    ("도시 이벤트", "시설 제거"): "도시 시설 제거",
+    ("도시 이벤트", "상태 판정"): "도시 상태 판정",
     ("발견물 이름 설정", "입력 대기"): DISCOVERY_NAME_WAIT_KIND,
     ("발견물 이름 설정", "강제 입력"): DISCOVERY_NAME_FORCE_KIND,
     ("상태값", "증감"): "상태값 증감", ("상태값", "설정"): "상태값 설정",
-    ("상태값", "증감 (상태값 참조)"): "상태값 참조 증가",
-    ("인물 이벤트", "실행 방식 2"): "인물 이벤트 실행", ("인물 이벤트", "실행 방식 3"): "인물 이벤트 실행 (보조)", ("인물 이벤트", "실행 모드 설정"): "이벤트 분류 설정",
-    ("조건 판정", "숨은 수치 확률"): "이벤트 조건 판정",
-    ("행 이동", "파트 오프셋"): "이벤트 내부 참조",
-    ("인물 상태", "이벤트 인물 참조 바인딩"): "인물 참조 설정", ("인물 상태", "런타임 상태 초기화"): "인물 상태 처리 1", ("인물 상태", "통역 고용/교체"): "인물 상태 처리 2", ("인물 상태", "상태 비트 02 설정"): "인물 상태 처리 3", ("인물 상태", "상태 비트 04 설정"): "인물 상태 처리 4", ("인물 상태", "상태 비트 04 해제"): "인물 상태 비트 해제", ("인물 상태", "선택 판정"): "인물 선택 판정", ("인물 상태", "위치 판정"): "인물 위치 판정",
+    ("상태값", "증감 (참조 수치)"): "상태값 참조 증가",
+    ("특수 전투", "일기토 실행"): "일기토 실행", ("특수 전투", "육상전 실행"): "육상전 실행", ("특수 전투", "일기토 연출 세트 설정"): "일기토 연출 세트 설정",
+    ("조건 판정", "운 판정"): "이벤트 조건 판정",
+    ("조건 판정", "무력 판정"): "이벤트 조건 판정",
+    ("조건 판정", "지력 판정"): "이벤트 조건 판정",
+    ("조건 판정", "신앙심 판정"): "이벤트 조건 판정",
+    ("조건 판정", UNSUPPORTED_EVENT_CONDITION_SUBKIND): "이벤트 조건 판정",
+    ("행 이동", "강제 이동"): "이벤트 내부 참조",
+    ("인물 상태", "런타임 상태 초기화"): "인물 상태 처리 1", ("인물 상태", "통역 고용/교체"): "인물 상태 처리 2",
     ("인원", "투입 인원 절반"): "특수 상태 처리",
     ("소지금", "증가"): "소지금 증가", ("소지금", "감소"): "소지금 감소",
     ("소지금", "비교 분기"): "소지금 비교 분기",
     ("외부 분기", "STORY0.CDS"): "STORY0.CDS 외 분기", ("외부 분기", "STORY1.CDS"): "STORY1.CDS 외 분기",
     ("대화창", "숨김"): "대화창 숨김", ("대화창", "표시"): "대화창 표시",
-    ("결과 설정", "거짓"): "결과 거짓 설정", ("결과 설정", "참"): "결과 참 설정",
-    ("행 이동", "이전 판정 참"): "이전 조건 참 시 이동", ("행 이동", "특수 분기"): "특수 분기",
+    ("결과 설정", "거짓"): "결과 거짓 설정", ("게임 오버", ""): "게임 오버",
+    ("행 이동", "이전 판정 참"): "이전 조건 참 시 이동", ("행 이동", "부관 미고용 조건"): "부관 미고용 조건",
     ("행 이동", "선택지 결과"): "선택지 결과 시 이동", ("행 이동", "힌트 상태"): "힌트 상태 조건 이동",
     ("행 이동", "도시 조건"): "도시 조건 이동",
     ("행 이동", "연도 범위"): "연도 범위 조건 이동",
@@ -326,7 +374,7 @@ BODY_KIND_TO_GROUP.update({
     "결과 거짓 시 이동": ("행 이동", "이전 조건"),
     "결과 참 시 이동": ("행 이동", "이전 조건"),
     "이전 조건 참 시 이동": ("행 이동", "이전 판정 참"),
-    "특수 분기": ("행 이동", "특수 분기"),
+    "부관 미고용 조건": ("행 이동", "부관 미고용 조건"),
     "선택지 결과 시 이동": ("행 이동", "선택지 결과"),
     "힌트 상태 조건 이동": ("행 이동", "힌트 상태"),
     "발견물 상태 조건 이동": ("행 이동", "발견물"),
@@ -343,21 +391,22 @@ BODY_KIND_TO_GROUP.update({
     "소지금 비교 분기": ("소지금", "비교 분기"),
     "STORY0.CDS 외 분기": ("외부 분기", "STORY0.CDS"),
     "STORY1.CDS 외 분기": ("외부 분기", "STORY1.CDS"),
-    "인물 이벤트 실행": ("인물 이벤트", "실행 방식 2"),
-    "인물 이벤트 실행 (보조)": ("인물 이벤트", "실행 방식 3"),
-    "이벤트 분류 설정": ("인물 이벤트", "실행 모드 설정"),
-    "이벤트 조건 판정": ("조건 판정", "숨은 수치 확률"),
-    "이벤트 내부 참조": ("행 이동", "파트 오프셋"),
-    "내부 상태 설정": ("이벤트 상태", "값 2 설정"),
+    "일기토 실행": ("특수 전투", "일기토 실행"),
+    "육상전 실행": ("특수 전투", "육상전 실행"),
+    "일기토 연출 세트 설정": ("특수 전투", "일기토 연출 세트 설정"),
+    "이벤트 조건 판정": ("조건 판정", "운 판정"),
+    "이벤트 내부 참조": ("행 이동", "강제 이동"),
+    "국가 멸망 처리": ("국가/세력 상태", "멸망 처리"),
     "특수 상태 처리": ("인원", "투입 인원 절반"),
     "인물 상태 처리 1": ("인물 상태", "런타임 상태 초기화"),
     "인물 상태 처리 2": ("인물 상태", "통역 고용/교체"),
-    "인물 상태 처리 3": ("인물 상태", "상태 비트 02 설정"),
-    "인물 참조 설정": ("인물 상태", "이벤트 인물 참조 바인딩"),
-    "인물 상태 처리 4": ("인물 상태", "상태 비트 04 설정"),
-    "인물 상태 비트 해제": ("인물 상태", "상태 비트 04 해제"),
-    "인물 선택 판정": ("인물 상태", "선택 판정"),
-    "인물 위치 판정": ("인물 상태", "위치 판정"),
+    CITY_STRING_COMMAND_KIND: ("도시 이벤트", "임시 문자열 등록"),
+    "도시 국적 변경": ("도시 이벤트", "국적 변경"),
+    "도시 점령지 설정": ("도시 이벤트", "점령지 설정"),
+    "도시 점령지 해제": ("도시 이벤트", "점령지 해제"),
+    "도시 제거": ("도시 이벤트", "도시 제거"),
+    "도시 시설 제거": ("도시 이벤트", "시설 제거"),
+    "도시 상태 판정": ("도시 이벤트", "상태 판정"),
 })
 BODY_KIND_TO_DETAIL = {kind: detail for (_group, detail), kind in MEDIA_DETAIL_TO_KIND.items()}
 BODY_KIND_TO_DETAIL.update({kind: detail for (_group, detail), kind in MOVE_DETAIL_TO_KIND.items()})
@@ -408,15 +457,50 @@ BODY_KIND_TO_DETAIL[STATE_REFERENCE_COMPARE_BRANCH_KIND] = "상태값끼리 비�
 BODY_KIND_TO_DETAIL[DISCOVERY_BRANCH_KIND] = "상태"
 BODY_KIND_TO_DETAIL[DISCOVERY_REGISTRATION_BRANCH_KIND] = "등록"
 BODY_KIND_TO_DETAIL[STATE_GREATER_BRANCH_KIND] = "초과 (고정)"
+# 43 2D ... 20의 무작위 기준 분기는 원본의 비교 opcode가 `이하`지만,
+# 분기하는 경우는 기준값을 초과했을 때다. 목록에는 실행되는 분기 의미를
+# 표시하므로 174번 파트 17행처럼 "초과 (랜덤)"으로 표기한다.
+BODY_KIND_TO_DETAIL[STATE_LESS_OR_EQUAL_RANDOM_BRANCH_KIND] = "초과 (랜덤)"
 BODY_KIND_TO_DETAIL[ABILITY_COMPARE_BRANCH_KIND] = "이하 (수치)"
 BODY_KIND_TO_DETAIL[ABILITY_COMPARE3_BRANCH_KIND] = "초과 (수치)"
 BODY_KIND_TO_DETAIL[STATE_SCALAR_COMPARE_BRANCH_KIND] = "같음 (수치)"
 BODY_KIND_TO_DETAIL[RUNTIME_REFERENCE_BRANCH_KIND] = "특수 참조"
 CHOICE_BRANCH_KIND = "선택지 결과 시 이동"
+
+# 모든 본문 조건 분기는 값 칸에 목표 행을 저장한다. 그러나 목표 행으로 가는
+# 조건은 하위 opcode마다 다르므로, 단순한 "이동할 행" 표시는 금지한다.
+CONDITIONAL_BRANCH_KINDS = (
+    "결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "부관 미고용 조건",
+    CHOICE_BRANCH_KIND, HINT_BRANCH_KIND, DISCOVERY_BRANCH_KIND,
+    DISCOVERY_REGISTRATION_BRANCH_KIND, ITEM_POSSESSION_BRANCH_KIND,
+    ITEM_ABSENCE_BRANCH_KIND, YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND,
+    YEAR_RANGE_BRANCH_KIND, CITY_BRANCH_KIND, NPC_BRANCH_KIND,
+    STATE_REFERENCE_COMPARE_BRANCH_KIND, STATE_SCALAR_COMPARE_BRANCH_KIND,
+    RUNTIME_REFERENCE_BRANCH_KIND, "소지금 비교 분기",
+) + NUMERIC_COMPARE_BRANCH_KINDS
+
+
+def branch_target_label(kind: str) -> str:
+    """Return the explicit condition under which a branch uses its target row."""
+    labels = {
+        CHOICE_BRANCH_KIND: "선택값 불일치 시 이동할 행:",
+        "결과 거짓 시 이동": "결과가 거짓일 때 이동할 행:",
+        "결과 참 시 이동": "결과가 참일 때 이동할 행:",
+        "이전 조건 참 시 이동": "이전 조건이 참일 때 이동할 행:",
+        "부관 미고용 조건": "부관 미고용 시 이동할 행:",
+    }
+    return labels.get(kind, "조건 불충족 시 이동할 행:")
+
+
+def branch_target_value_text(kind: str, value: object) -> str:
+    """Format the target row without hiding the direction of the branch."""
+    label = branch_target_label(kind).removesuffix("이동할 행:").rstrip()
+    return f"{label} {value}번 행"
+
 EVENT_RESULT_CODES = (
-    (0, "이벤트 종료"),
-    (1, "다음 단계 진행"),
-    (2, "이벤트 반복"),
+    (0, "완료 처리"),
+    (1, "실패 처리"),
+    (2, "미처리"),
 )
 EVENT_RESULT_NAMES = dict(EVENT_RESULT_CODES)
 
@@ -434,9 +518,10 @@ COMMAND_GUIDE = (
     ("조건", "후원자 계약 없음", "현재 후원자 계약이 없을 때만 통과합니다."),
     ("조건", "또는 (OR)", "양옆 조건 중 하나가 참이면 통과합니다. OR 없이 이어진 조건은 모두 참이어야 합니다."),
     ("본문", "대사 | 일반 | 화자", "1차 대사, 2차 일반, 3차 화자를 선택해 대사를 표시하고 확인 뒤 다음 행으로 진행합니다."),
+    ("본문", "대사 | 검사관 | 계약/동행 필요", "검사관 화자 태그가 붙은 대사는 계약하거나 동행 중인 검사관이 있을 때만 표시됩니다. 없으면 대화창을 띄우지 않고 해당 행 전체를 건너뛰어 다음 행으로 진행합니다."),
     ("본문", "대사 | 예/아니오 | 화자", "예·아니오 선택 대사를 표시합니다. 선택 결과는 행 이동 | 이전 조건 | 참·거짓에서 사용합니다."),
     ("본문", "대사 | 다중 선택 | 화자", "슬래시(/)로 구분한 선택지를 표시합니다. 행 이동 | 선택지 결과에서 각 선택값을 처리합니다."),
-    ("본문", "대사 | 대상 지정 | 화자", "화자와 대상 인물을 지정해 대사를 표시합니다."),
+    ("본문", "도시 이벤트 | 임시 문자열 등록 | 도시", "지정 도시별 임시 문자열을 등록합니다. 일반 대사를 표시하는 명령이 아니며, 현재 원본 EXE에서 이 문자열 목록의 소비 경로는 확인되지 않았습니다."),
     ("본문", "음원 | 재생", "음원 ID를 재생합니다."),
     ("본문", "음원 | 정지", "현재 재생 중인 음원을 정지합니다."),
     ("본문", "미디어 | 이미지 | DSTILL", "DSTILL의 지정한 정지 이미지 번호를 표시합니다."),
@@ -449,27 +534,34 @@ COMMAND_GUIDE = (
     ("본문", "해상 전투", "지정한 해상 조우 상대와 전투를 시작합니다. 결과 참·거짓 시 이동 명령으로 승패 경로를 처리합니다."),
     ("본문", "이벤트 아이템 등록", "아이템 ID를 16칸 휴대 소지품 목록에 추가합니다. 발견물 보상 ID는 실행 시 이 목록에 넣지 않고 건너뜁니다."),
     ("본문", "이벤트 아이템 처리", "아이템 ID에 해당하는 별도 이벤트 상태 항목을 처리 완료로 기록합니다. 소지품을 추가하거나 제거하지 않습니다."),
-    ("본문", "인물 이벤트 | 실행 방식 2", "인물 ID와 현재 실행 모드를 사용해 방식 2의 인물 이벤트를 실행하고, 결과를 후속 분기에 제공합니다."),
-    ("본문", "인물 이벤트 | 실행 방식 3", "별도 UI 경로인 방식 3으로 인물 이벤트를 실행하고, 결과를 후속 분기에 제공합니다."),
-    ("본문", "인물 상태 | 런타임 상태 초기화", "방식 1은 역사 인물 런타임 레코드의 이벤트 상태 필드를 초기화합니다."),
+    ("본문", "특수 전투 | 일기토 실행", "지정한 특수 전투 상대와 일기토를 시작합니다. 앞선 일기토 연출 세트 설정이 FIGHTER.CDS의 전용 그래픽·팔레트 세트를 선택하며, 결과를 후속 분기에 제공합니다."),
+    ("본문", "특수 전투 | 육상전 실행 | 전장", "3차에서 전장 결정 방식을 선택하고 상대 ID를 지정해 육상전을 시작합니다. 석조/도시 전장(고정)은 2F 08로 항상 석조·도시 배경을 사용합니다. 현재 위치 지형(자동)은 2F 0D로 지도 타일값을 읽어 초원·숲·황무지·석조/도시 중 맞는 배경을 자동 선택합니다. 일기토 연출 세트 설정의 영향은 받지 않습니다."),
+    ("본문", "인물 상태 | 런타임 상태 초기화", "38 0D는 인물 런타임 레코드의 +0xF8 이벤트 상태 필드를 0으로 설정합니다. 일반 역사 인물뿐 아니라 특수 이벤트 인물(예: 211 투라스칼라의 청년)도 대상으로 씁니다."),
     ("본문", "인물 상태 | 통역 고용·교체", "방식 2는 지정 인물을 통역으로 고용하거나 기존 통역을 교체합니다."),
-    ("본문", "인물 이벤트 | 실행 모드 설정", "이후 실행 방식 2 인물 이벤트가 사용할 실행 모드를 설정합니다."),
-    ("본문", "조건 판정 | 숨은 수치 확률", "숨은 수치 코드(현재 6·18·21·23 확인)를 대상으로 0~99 난수를 판정하고, 결과를 후속 분기에 제공합니다."),
-    ("본문", "행 이동 | 파트 오프셋", "현재 파트의 시작 위치를 기준으로 지정한 바이트 오프셋으로 즉시 이동합니다. 행 번호가 아니라 원본 파트 안의 오프셋입니다."),
-    ("본문", "이벤트 상태 | 값 2 설정", "지정한 이벤트 상태 레코드의 상태값을 2로 설정합니다."),
+    ("본문", "특수 전투 | 일기토 연출 세트 설정", "다음 일기토 실행이 FIGHTER.CDS에서 읽을 그래픽·팔레트 세트를 지정합니다. 세트는 0~6만 유효하며, DISEV.CDS에서는 1~4를 사용합니다."),
+    ("본문", "조건 판정 | 운 판정", "운 판정(R(100) ≤ 운+1)을 수행해 참·거짓 결과를 저장하고, 그 결과를 사용한 MPEFFECT.CDS의 동전 굴리기 연출을 재생합니다. 난수 자체나 운 수치를 변경하지 않습니다."),
+    ("본문", "조건 판정 | 무력 판정", "무력 판정(R(100) ≤ 무력+1)을 수행해 참·거짓 결과를 저장하고 전용 판정 연출을 재생합니다."),
+    ("본문", "조건 판정 | 지력 판정", "지력 판정(R(100) ≤ 지력+1)을 수행해 참·거짓 결과를 저장하고 전용 판정 연출을 재생합니다."),
+    ("본문", "조건 판정 | 신앙심 판정", "신앙심 판정(R(100) ≤ 신앙심+1)을 수행해 참·거짓 결과를 저장합니다. 이 처리기에는 MPEFFECT 연출 호출이 없습니다."),
+    ("본문", "조건 판정 | 미지원 판정 ID (원본 보존)", "알려진 네 값(6·18·21·23) 이외의 35 1C 명령을 손실 없이 보존하기 위한 항목입니다. 해당 ID가 다른 상태값 명령에서 유효하더라도 35 1C 처리기는 값을 사용하지 않습니다. 난수·연출·결과 갱신 없이 직전 판정 결과를 유지하며, 이벤트 시작 직후라면 초기값 참을 유지합니다."),
+    ("본문", "행 이동 | 강제 이동", "같은 파트 안의 지정 행으로 무조건 이동합니다. 게임 원본은 바이트 오프셋으로 저장하지만, 편집기는 행 번호를 저장 직전에 오프셋으로 자동 변환하므로 행 삽입·제거 뒤에도 목적 행을 유지합니다."),
+    ("본문", "국가/세력 상태 | 멸망 처리", "지정한 국가/세력의 런타임 상태를 2(멸망)로 설정합니다. 예: 72 아즈텍 왕국, 77 잉카 제국."),
     ("본문", "인원 | 투입 인원 절반", "현재 투입 인원(대원 또는 선원)을 올림하여 절반으로 설정합니다. 아래 원본 인수는 이 형식에 남아 있는 바이트 값입니다."),
-    ("본문", "인물 상태 | 이벤트 인물 참조 바인딩", "이벤트가 사용할 역사 인물 참조를 바인딩합니다."),
-    ("본문", "인물 상태 | 상태 비트 02 설정", "지정 인물 런타임 상태의 비트 02를 설정합니다."),
-    ("본문", "인물 상태 | 상태 비트 04 설정", "지정 인물 런타임 상태의 비트 04를 설정합니다."),
-    ("본문", "인물 상태 | 상태 비트 04 해제", "지정 인물 런타임 상태의 비트 04를 해제합니다."),
-    ("본문", "이벤트 조건 판정", "지정한 내부 조건을 판정해 뒤의 결과 참·거짓 시 이동 명령에 결과를 제공합니다. 조건값의 세부 의미는 실행 파일 추적이 필요합니다."),
-    ("본문", "이벤트 내부 참조", "선택지·분기·발견 처리 사이에서 사용하는 내부 참조값입니다. 고정 4바이트 형식은 확인됐지만 값의 세부 의미는 아직 미확인입니다."),
-    ("본문", "주인공 성격 판정", "델포이 성지 이벤트에서 주인공의 성격을 판정·갱신한 뒤 보상 흐름으로 진행합니다."),
+    ("본문", "도시 이벤트 | 국적 변경", "지정 도시의 소속 국가를 주인공의 국적으로 변경합니다. 도시 소유권 양도·국가 멸망 뒤의 도시 정리에 사용됩니다."),
+    ("본문", "도시 이벤트 | 점령지 설정", "지정 도시를 점령지로 설정합니다. 도시의 소속 국가를 바꾸는 국적 변경 명령과는 별개이며, 원본 명령명은 '점령지화'입니다."),
+    ("본문", "도시 이벤트 | 점령지 해제", "지정 도시의 점령지 상태를 해제합니다. 원본 명령명은 '비점령지화'이며 HIST_EV.CDS에서도 사용됩니다."),
+    ("본문", "도시 이벤트 | 도시 제거", "지정 도시를 제거·비활성화합니다. 도시 레코드는 남지만 도시 목록과 교역·특산품 처리 대상에서 제외됩니다."),
+    ("본문", "도시 이벤트 | 시설 제거", "지정 도시의 시설 마스크에서 선택한 시설을 제거합니다. 예를 들어 잉카 멸망 이벤트는 쿠스코의 왕궁을 제거합니다."),
+    ("본문", "도시 이벤트 | 상태 판정", "지정 도시의 상태를 판정합니다. 판정 조건의 세부 의미는 아직 확인되지 않았습니다."),
+    ("본문", "이벤트 조건 판정", "지정한 주인공 능력치와 0~99 난수를 비교해 참·거짓 결과를 만들고, 종류에 따라 전용 판정 연출을 재생합니다."),
+    ("본문", "이벤트 내부 참조", "`30 1D`는 같은 파트 안의 명령 시작 위치로 무조건 이동합니다. 편집기에서는 행 번호로 표시하고 저장 시 원본 오프셋으로 변환합니다."),
+    ("본문", "델포이 신탁 출력", "주인공의 비중립 성격, 자녀 적성, 배우자 정보와 남은 수명 경고를 신탁 메시지로 출력합니다. 성격이나 이벤트 판정 결과는 변경하지 않습니다."),
     ("본문", "미니게임", "성배·스핑크스·미궁·낚시·코인·발라몬의 탑·화살표 입방체 퍼즐을 실행합니다. 발라몬의 탑만 원반 수(4~7)를 지정합니다."),
     ("본문", "힌트 획득", "지정한 발견물 힌트를 활성화해 이후 힌트 조건과 발견 이벤트에서 사용할 수 있게 합니다."),
     ("본문", "대화창 | 숨김·표시", "2차 숨김 또는 표시를 선택해 대화창을 잠시 감추거나 다시 표시합니다."),
-    ("본문", "결과 설정 | 참·거짓", "2차 참 또는 거짓을 선택해 직전 선택·조건의 결과를 강제로 설정합니다."),
-    ("본문", "행 이동 | 특수 분기", "특수 이벤트의 내부 판정 결과에 따라 지정한 행으로 이동합니다. 판정 기준은 아직 실행 파일 추적이 필요합니다."),
+    ("본문", "결과 설정 | 거짓", "직전 선택·조건의 결과를 거짓으로 강제 설정합니다."),
+    ("본문", "게임 오버", "게임 오버를 요청하고 현재 이벤트 해석을 즉시 끝냅니다. `4A`는 파르테논 신전 전투 패배 경로에서 사용됩니다."),
+    ("본문", "행 이동 | 부관 미고용 조건", "부관이 고용되어 있지 않을 때 지정한 행으로 이동합니다. `43 56`은 부관 슬롯이 비어 있으면 참이 되며, 스톤헨지에서는 부관 대화·선택 경로를 건너뜁니다."),
     ("본문", "대기", "지정한 초 단위만큼 다음 명령 실행을 멈춥니다. 값 1은 약 1초입니다."),
     ("본문", "날짜 경과", "고정 일수 또는 랜덤 일수 범위만큼 게임 날짜를 진행하고 시간 경과 처리를 실행합니다."),
     ("본문", "발견", "대상 발견물을 등록하고 발견 상태로 바꿉니다."),
@@ -480,12 +572,12 @@ COMMAND_GUIDE = (
     ("본문", "행 이동 | 상태값 | 이하 | 대상", "3차 이하와 4차 대상 상태값을 선택합니다. 대상이 기준값 이하가 아니면 지정한 행으로 이동합니다."),
     ("본문", "소지금 | 증가·감소·비교 분기", "증가·감소는 소지금을 직접 변경합니다. 비교 분기는 소지금이 기준값보다 작지 않을 때 지정 행으로 이동합니다."),
     ("본문", "이벤트 플래그 설정", "지정한 전역 이벤트 플래그 ID를 활성화합니다. 플래그별 세부 의미는 아직 확인되지 않았습니다."),
-    ("본문", "신도시 생성", "지정한 도시를 신도시로 생성합니다."),
+    ("본문", "신도시 생성", "제거·비활성 상태인 지정 도시를 생성·활성화합니다. 중국 발견 뒤 오문 신도시를 여는 명령이 이 형식입니다."),
     ("본문", "상태값 | 증감·설정 | 대상", "2차 증감 또는 설정과 3차 대상 상태값을 선택합니다. 수치는 고정값 또는 랜덤 범위로 입력합니다."),
     ("본문", "상태값 참조 증가", "한 상태값의 현재 수치를 다른 상태값에 더합니다. 예: 아마조네스 이벤트의 규율에 상태값 19를 더하는 형식입니다."),
     ("본문", "행 이동 | 이전 조건 | 거짓·참", "3차 거짓 또는 참을 선택합니다. 직전 예·아니오 응답 또는 명령 결과가 해당 값일 때 지정한 행으로 이동합니다."),
     ("본문", "행 이동 | 이전 판정 참", "직전에 평가한 공용 조건 값이 참일 때 지정한 행으로 이동합니다."),
-    ("본문", "행 이동 | 선택지 결과", "다중 선택지 대사에서 지정한 선택값을 고르면 지정한 행으로 이동합니다."),
+    ("본문", "행 이동 | 선택지 결과", "선택값이 일치하면 다음 행으로 진행하고, 일치하지 않으면 지정한 행으로 이동합니다."),
     ("본문", "행 이동 | 힌트 상태 | 활성·미활성 | 힌트", "3차 힌트 상태와 4차 힌트를 지정합니다. 조건이 맞지 않으면 지정한 행으로 이동합니다."),
     ("본문", "행 이동 | 아이템 상태 | 소지·미소지 | 아이템", "3차 소지 또는 미소지와 4차 아이템을 지정합니다. 아이템 상태가 조건과 맞지 않으면 지정한 행으로 이동합니다."),
     ("본문", "행 이동 | 발견물 상태 | 발견물", "3차 대상 발견물의 상태를 검사하고 조건이 맞지 않으면 지정한 행으로 이동합니다."),
@@ -506,22 +598,33 @@ STAT_TARGETS = (
     (0, "피로도"), (1, "규율"), (2, "총 선원 수"), (3, "소지금"),
     (4, "악명"), (6, "무력"), (7, "체력"), (8, "생명력"),
     (10, "동승 인물 체력"), (11, "동승 인물 생명력"),
-    # EXE의 상태값 읽기 분기(004070E6)는 출력값을 기록하지 않고 종료한다.
-    (16, "상태값 16 (읽기 미지원/예약)"), (17, "명성"),
+    # 파르테논 신전의 26 1C 10 설정 뒤 2F 육상전에서 상대 병력으로 사용된다.
+    # 일반 상태 목록에는 표시되지 않지만 전투 시작 처리기가 이 값을 읽는다.
+    (16, "육상전 상대 병력 수"), (17, "명성"),
     (18, "운"), (20, "현재 함선 내구도"), (21, "지력"), (22, "매력"),
     (23, "신앙심"), (24, "동승 인물 지력"),
-    # 성격값은 별자리·직업·얼굴/나이 보정으로 계산되는 8개 내부 축이다.
-    # 0x31(주인공 성격 판정) 명령이 EXE 문자열을 이용해 각 축을 직접 표시한다.
+    # 일부 상태값은 별자리·직업·얼굴/나이 보정으로 계산되는 성격 축이다.
+    # 0x31(델포이 신탁 출력)과의 개별 ID 대응이 확인된 항목만 성격명으로 표시한다.
     (5, "주인공 성격: 편협↔욕심쟁이"), (9, "동승 인물 성격: 소심↔거만"),
     (12, "동승 인물 사격술"), (13, "동승 인물 무력"),
     (14, "동승 인물 역사학"), (15, "주인공 아프리카토착어"),
-    (19, "주인공 성격: 소심↔거만"), (25, "주인공 과학"),
+    (25, "주인공 과학"),
+    (27, "현재 후원자 계약 남은 기한 (일)"),
+    (29, "STORY 의뢰 남은 기한 (일)"),
     (30, "주인공 성격: 낭비가↔깍쟁이"),
     # 잉카제국 파트의 43 2E 1C 분기에서 기준값 0과 비교된다. 일반 능력치가
     # 아니라 이벤트 흐름용 상태값이지만, 원본 명령을 안전하게 편집·보존한다.
     (26, "잉카 제국 전용 판정값"),
 )
 STAT_TARGET_NAMES = dict(STAT_TARGETS)
+
+# `19 1C [대상 상태값] 1C [종류 코드]`의 두 번째 번호는 상태값 ID가 아니다.
+# EXE의 범용 수치 피연산자 해석기(0x406D30)가 읽는 종류 코드다. 13h(19)는
+# 주인공 성격 배열의 첫 축을 반환하며, 0=소심, 1=중립, 2=거만으로 확인됐다.
+REFERENCE_OPERAND_SOURCES = (
+    (19, "주인공 성격 축: 소심↔거만 (0·1·2)"),
+)
+REFERENCE_OPERAND_SOURCE_NAMES = dict(REFERENCE_OPERAND_SOURCES)
 
 
 def parse_hex(text: str) -> bytes:
@@ -825,17 +928,25 @@ class DisevEditor:
     # 기본 창 폭(1180px)에서 약 1/5가 되도록 발견물 목록은 고정 폭으로 둔다.
     # 창을 넓힐 때 추가 폭은 오른쪽 편집 영역에만 배분한다.
     DISCOVERY_PANEL_WIDTH = 240
+    DEFAULT_WINDOW_WIDTH = 1180
+    DEFAULT_WINDOW_HEIGHT = 760
+    SPLASH_VISIBLE_MS = 1500
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title(APP_TITLE)
+        # 위젯의 요청 크기와 중앙 좌표가 계산되기 전에는 창을 표시하지 않는다.
+        # 그렇지 않으면 OS 기본 위치에 잠시 나타난 뒤 중앙으로 이동한다.
+        self.root.withdraw()
         try:
             self.root.iconbitmap(default=str(_resource_data_dir().parent / "Icon.ico"))
         except tk.TclError:
             # 아이콘 리소스가 없는 개발·진단 환경에서도 편집기는 실행한다.
             pass
-        self.root.geometry("1180x760")
+        self.root.geometry(f"{self.DEFAULT_WINDOW_WIDTH}x{self.DEFAULT_WINDOW_HEIGHT}")
         self.root.minsize(980, 650)
+        self._splash_window: tk.Toplevel | None = None
+        self._splash_image: ImageTk.PhotoImage | None = None
 
         self.disev_path: Path | None = None
         self.exe_path: Path | None = None
@@ -891,6 +1002,11 @@ class DisevEditor:
         self.body_item_var = tk.StringVar()
         self.body_city_var = tk.StringVar()
         self.body_stat_target_var = tk.StringVar()
+        self.body_source_stat_var = tk.StringVar()
+        # 상태값 참조 증가(19 1C)의 실제 실행 결과를 즉시 설명한다.
+        # 대상(3차)을 바꿔도 참조 원천(4차)은 그대로일 수 있으므로, 두 필드의
+        # 관계를 별도 문장으로 보여 주어 선택 변경이 명확히 드러나게 한다.
+        self.body_reference_preview_var = tk.StringVar()
         self.body_hint_state_var = tk.StringVar(value="활성")
         self.body_hint_var = tk.StringVar()
         self.body_result_var = tk.StringVar(value=EVENT_RESULT_NAMES[0])
@@ -934,8 +1050,8 @@ class DisevEditor:
             combo.bind("<Down>", self._cycle_combobox)
         self.root.after_idle(self._autosize_all_comboboxes)
         self.root.protocol("WM_DELETE_WINDOW", self._close)
-        # 위젯의 최소 크기 계산이 끝난 뒤 중앙화해야 초기 배치가 밀리지 않는다.
-        self.root.after(100, self._finish_startup)
+        # 패처와 동일한 자체 스플래시를 띄운 뒤 메인 창을 처음 표시한다.
+        self._start_main_window()
         if self._update_notice is not None:
             self.root.after(400, self._show_update_notice)
         if UPDATE_LATEST_URL:
@@ -1580,26 +1696,70 @@ class DisevEditor:
 
     def _center_window(self) -> None:
         self.root.update_idletasks()
-        width = self.root.winfo_width()
-        height = self.root.winfo_height()
+        # 실제 적용할 크기 자체로 중앙 좌표를 계산한다. 아직 표시되지 않은
+        # 창의 현재 크기(winfo_width/winfo_height)를 쓰면 좌표가 어긋날 수 있다.
+        width = max(self.DEFAULT_WINDOW_WIDTH, self.root.winfo_reqwidth())
+        height = max(self.DEFAULT_WINDOW_HEIGHT, self.root.winfo_reqheight())
         x = max(0, (self.root.winfo_screenwidth() - width) // 2)
         y = max(0, (self.root.winfo_screenheight() - height) // 2)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
-        # 좌측 발견물 목록은 기본 창의 약 1/5 폭으로 고정한다.
+
+    def _place_discovery_pane(self) -> None:
+        """창이 표시된 뒤 실제 폭을 기준으로 좌측 발견물 패널을 배치한다."""
+        if self.main_pane.winfo_width() <= self.DISCOVERY_PANEL_WIDTH:
+            # withdraw 상태에서는 PanedWindow 폭이 1px일 수 있다.
+            self.root.after(20, self._place_discovery_pane)
+            return
         try:
             self.main_pane.sashpos(0, self.DISCOVERY_PANEL_WIDTH)
         except tk.TclError:
             pass
 
     def _finish_startup(self) -> None:
-        """창을 표시할 준비가 끝난 EXE 스플래시를 닫는다."""
+        """중앙 좌표를 확정하고 스플래시 대신 메인 창을 처음 표시한다."""
+        if self._splash_window is not None and self._splash_window.winfo_exists():
+            self._splash_window.destroy()
+        self._splash_window = None
+        self._splash_image = None
         self._center_window()
+        self._close_pyi_splash()
+        self.root.deiconify()
+        self.root.after_idle(self._place_discovery_pane)
+
+    @staticmethod
+    def _close_pyi_splash() -> None:
+        """PyInstaller의 부팅 스플래시가 있으면 닫는다."""
         try:
             import pyi_splash
             pyi_splash.close()
         except (ImportError, RuntimeError):
             # .pyw 직접 실행과 스플래시를 쓰지 않는 빌드에서는 모듈이 없다.
             pass
+
+    def _start_main_window(self) -> None:
+        """개발 실행과 배포 EXE에서 공통으로 보이는 시작 스플래시를 연다."""
+        self._center_window()
+        try:
+            image_path = _resource_data_dir().parent / "splash.jpg"
+            with Image.open(image_path) as source:
+                self._splash_image = ImageTk.PhotoImage(source.copy())
+        except (OSError, tk.TclError):
+            self._finish_startup()
+            return
+        splash = tk.Toplevel(self.root)
+        self._splash_window = splash
+        splash.overrideredirect(True)
+        splash.attributes("-topmost", True)
+        ttk.Label(splash, image=self._splash_image).pack()
+        splash.update_idletasks()
+        width, height = self._splash_image.width(), self._splash_image.height()
+        x = max(0, (splash.winfo_screenwidth() - width) // 2)
+        y = max(0, (splash.winfo_screenheight() - height) // 2)
+        splash.geometry(f"{width}x{height}+{x}+{y}")
+        # EXE 부팅 단계의 스플래시를 자체 창으로 자연스럽게 넘긴다.
+        self._close_pyi_splash()
+        splash.lift()
+        self.root.after(self.SPLASH_VISIBLE_MS, self._finish_startup)
 
     def _set_edit_state(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
@@ -1754,7 +1914,19 @@ class DisevEditor:
         path = DisevEditor._resource_data_dir() / filename
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            return [(int(record["id"]), str(record["name"])) for record in data["records"]]
+            targets = [(int(record["id"]), str(record["name"])) for record in data["records"]]
+            # 0D 인물 참조는 일반 역사 인물(0~204)뿐 아니라 EXE 정적 표의
+            # 특수 이벤트 인물(205~280)도 받는다. 예: 211은 투라스칼라의 청년.
+            if filename == "character_database.json":
+                special_path = path.with_name("special_event_character_targets.json")
+                special = json.loads(special_path.read_text(encoding="utf-8"))
+                known_ids = {target_id for target_id, _name in targets}
+                targets.extend(
+                    (int(record["id"]), str(record["name"]))
+                    for record in special["records"]
+                    if int(record["id"]) not in known_ids
+                )
+            return targets
         except (OSError, ValueError, KeyError, TypeError):
             return []
 
@@ -2162,6 +2334,11 @@ class DisevEditor:
         elif kind == "특수 수치 판정":
             group = "미니게임"
             subkind = MINIGAME_SUBKIND_BY_TYPE.get(int(token.get("difficulty", -1)), "")
+        elif kind == "이벤트 조건 판정":
+            group = "조건 판정"
+            subkind = EVENT_CONDITION_SUBKIND_BY_CODE.get(
+                int(value), UNSUPPORTED_EVENT_CONDITION_SUBKIND,
+            ) if value is not None else UNSUPPORTED_EVENT_CONDITION_SUBKIND
         elif kind == "특수 조우 연출 설정":
             group = "특수 조우"
             subkind = SPECIAL_ENCOUNTER_SUBKIND_BY_VALUE.get(
@@ -2172,7 +2349,9 @@ class DisevEditor:
         self.body_command_var.set(group if group in BODY_COMMAND_GROUPS else "")
         self.body_subkind_var.set(subkind)
         self.body_detail_var.set(BODY_KIND_TO_DETAIL.get(kind, ""))
-        if kind == HINT_BRANCH_KIND:
+        if kind == "육상전 실행":
+            self.body_detail_var.set(str(token.get("battlefield", "현재 위치 지형 (자동)")))
+        elif kind == HINT_BRANCH_KIND:
             self.body_detail_var.set("활성" if token.get("hint_active", True) else "미활성")
         elif kind == DISCOVERY_BRANCH_KIND:
             discovery_id = int(token["character_id"])
@@ -2217,29 +2396,37 @@ class DisevEditor:
             self._body_kind_changed()
         finally:
             self._body_kind_change_from_selection = False
+        # 재구성 과정에서 기본 선택값으로 바뀌지 않도록, 원본 35 1C의
+        # u16 ID에 대응하는 2차 판정명을 마지막에 다시 확정한다.
+        if kind == "이벤트 조건 판정":
+            self.body_subkind_var.set(subkind)
         if kind in DIALOGUE_KINDS:
             self._set_body_speaker(bytes(token.get("speaker_prefix", b"")))
-        if kind == "대상 지정 대사":
-            self._set_body_npc(int(token["character_id"]))
+        if kind == CITY_STRING_COMMAND_KIND:
+            self._set_body_city(int(token["character_id"]))
         if kind in DISCOVERY_NAME_COMMAND_KINDS:
             self._set_body_character(int(token["character_id"]))
         if kind == "발견물 등록/발견 처리":
             self._set_body_character(int(value))
         if kind in CHARACTER_TARGET_COMMAND_KINDS:
             self._set_body_npc(int(token["character_id"]))
+        if kind in CITY_TARGET_COMMAND_KINDS:
+            self._set_body_city(int(token["character_id"]))
         if kind in ("아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리"):
             self._set_body_item(int(value))
         if kind in (ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND):
             self._set_body_item(int(token["item_id"]))
         if kind == "신도시 생성":
             self._set_body_city(int(value))
+        if kind == "국가 멸망 처리":
+            self._set_body_nation(int(value))
         if kind == "이벤트 결과 코드":
             self._set_body_result(int(value))
         if kind in STAT_COMMAND_KINDS:
             self._set_body_stat_target(int(token["stat_id"]))
         if kind in STAT_REFERENCE_COMMAND_KINDS:
             self._set_body_stat_target(int(token["stat_id"]))
-            self.body_value_var.set(str(token["source_stat_id"]))
+            self._set_body_source_stat(int(token["source_stat_id"]))
         if kind in NUMERIC_COMPARE_BRANCH_KINDS:
             self._set_body_stat_target(int(token["stat_id"]))
             compare_text = str(token.get("compare_value_text") or token["compare_value"])
@@ -2280,10 +2467,13 @@ class DisevEditor:
         self.body_subkind_combo.configure(state="readonly" if editable and BODY_COMMAND_GROUPS.get(group) else "disabled")
         self.body_detail_combo.configure(
             state="readonly" if editable and (
-                group == "미디어" or (group == "행 이동" and bool(MOVE_SUBKINDS.get(subkind)))
+                group == "미디어"
+                or group == "상태값"
+                or (group == "행 이동" and bool(MOVE_SUBKINDS.get(subkind)))
+                or (group == "특수 전투" and subkind == "육상전 실행")
             ) else "disabled"
         )
-        needs_value = kind not in ("음원 정지", "이미지 표시 종료", "대화창 숨김", "대화창 표시", "결과 거짓 설정", "결과 참 설정", "주인공 성격 판정")
+        needs_value = kind not in ("음원 정지", "이미지 표시 종료", "대화창 숨김", "대화창 표시", "결과 거짓 설정", "게임 오버", "델포이 신탁 출력")
         self.body_value_entry.configure(state="normal" if editable and needs_value else "disabled")
         self.body_value2_entry.configure(
             state="normal" if editable and (
@@ -2326,11 +2516,19 @@ class DisevEditor:
         self.body_item_var.set("")
         self.body_city_var.set("")
         self.body_stat_target_var.set("")
+        self.body_source_stat_var.set("")
         self.body_hint_var.set("")
 
     def _body_kind_changed(self, _event=None) -> None:
         group = self.body_command_var.get()
         subkinds = BODY_COMMAND_GROUPS.get(group, ())
+        if (
+            group == "조건 판정"
+            and self.body_subkind_var.get() == UNSUPPORTED_EVENT_CONDITION_SUBKIND
+        ):
+            # 일반 선택 목록에는 노출하지 않는다. 실제 원본에 미지원 ID가
+            # 들어 있는 행을 선택했을 때만 보존용 항목을 임시로 표시한다.
+            subkinds = subkinds + (UNSUPPORTED_EVENT_CONDITION_SUBKIND,)
         self.body_subkind_combo.configure(values=subkinds, state="readonly" if subkinds else "disabled")
         self._autosize_combobox(self.body_kind_combo)
         self._autosize_combobox(self.body_subkind_combo)
@@ -2350,6 +2548,10 @@ class DisevEditor:
         elif group == "상태값":
             # 상태값 명령의 대상은 3차 분류로 선택한다.
             detail_kinds = tuple(name for _target_id, name in STAT_TARGETS)
+        elif group == "특수 전투" and self.body_subkind_var.get() == "육상전 실행":
+            # 2F의 두 번째 바이트가 전장 결정 방식을 고른다: 08은 석조/도시 고정,
+            # 0D는 현재 지도 타일의 지형을 자동으로 사용한다.
+            detail_kinds = BATTLEFIELD_SUBKINDS
         else:
             detail_kinds = ()
         self.body_detail_combo.configure(values=detail_kinds, state="readonly" if detail_kinds else "disabled")
@@ -2370,7 +2572,7 @@ class DisevEditor:
         else:
             kind = BODY_GROUP_TO_KIND.get((group, self.body_subkind_var.get()), BODY_GROUP_TO_KIND.get((group, ""), group))
         previous_kind = getattr(self, "_body_builder_kind", None)
-        text_value_kinds = DIALOGUE_KINDS + DISCOVERY_NAME_COMMAND_KINDS
+        text_value_kinds = TEXT_VALUE_COMMAND_KINDS
         if (
             not getattr(self, "_body_kind_change_from_selection", False)
             and previous_kind in text_value_kinds
@@ -2399,6 +2601,9 @@ class DisevEditor:
                 self.special_difficulty_var.set("5")
         elif group == "특수 조우":
             self.body_value_var.set(str(SPECIAL_ENCOUNTER_VALUE_BY_SUBKIND[self.body_subkind_var.get()]))
+        elif group == "조건 판정" and self.body_subkind_var.get() in EVENT_CONDITION_CODE_BY_SUBKIND:
+            # 확인된 능력치 판정은 원본 상태값 ID 입력을 노출하지 않고 고정값을 쓴다.
+            self.body_value_var.set(str(EVENT_CONDITION_CODE_BY_SUBKIND[self.body_subkind_var.get()]))
         # 2B 형식은 무작위 기준값만 지원하므로 선택 즉시 범위 입력을 켠다.
         if kind == STATE_GREATER_RANDOM_BRANCH_KIND:
             self.body_random_var.set(True)
@@ -2412,7 +2617,7 @@ class DisevEditor:
         is_choice_branch = kind == CHOICE_BRANCH_KIND
         is_special_value_check = kind == "특수 수치 판정"
         is_state_compare_branch = kind in NUMERIC_COMPARE_BRANCH_KINDS
-        is_branch = kind in ("결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "특수 분기", CHOICE_BRANCH_KIND, HINT_BRANCH_KIND, DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND, CITY_BRANCH_KIND, NPC_BRANCH_KIND) + NUMERIC_COMPARE_BRANCH_KINDS
+        is_branch = kind in ("결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "부관 미고용 조건", CHOICE_BRANCH_KIND, HINT_BRANCH_KIND, DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND, CITY_BRANCH_KIND, NPC_BRANCH_KIND) + NUMERIC_COMPARE_BRANCH_KINDS
         is_stat = kind in STAT_COMMAND_KINDS
         is_date_passage = kind == "날짜 경과"
         is_random_range = kind in RANDOM_RANGE_COMMAND_KINDS
@@ -2519,11 +2724,14 @@ class DisevEditor:
             if not self.body_stat_target_var.get():
                 self._set_body_stat_target(STAT_TARGETS[0][0])
         elif is_choice_branch:
-            self.body_value2_plain_label.configure(text="선택값:")
+            # 43 11은 선택값이 같으면 다음 행으로 진행하고, 다르면 지정 행으로
+            # 점프한다. 단순히 "선택값/이동할 행"이라고 쓰면 반대 의미로 읽히기
+            # 쉬우므로 양쪽 조건을 레이블에 드러낸다.
+            self.body_value2_plain_label.configure(text="일치할 선택값:")
             self.body_value2_plain_label.grid(row=0, column=2, sticky="e")
             self.body_value2_entry.configure(width=8)
             self.body_value2_entry.grid(row=0, column=3, sticky="w", padx=(5, 12))
-            self.body_value_label.configure(text="이동할 행:")
+            self.body_value_label.configure(text=branch_target_label(kind))
             self.body_value_label.grid(row=0, column=4, sticky="e")
             self.body_value_entry.configure(width=8)
             self.body_value_entry.grid(row=0, column=5, sticky="w", padx=(5, 0))
@@ -2609,14 +2817,14 @@ class DisevEditor:
             self.body_result_combo.configure(state="readonly")
         elif not is_stat and not is_date_passage and not is_character_dialogue and not is_dialogue and not is_hint_branch and not is_hint_grant and not is_discovery_branch and not is_state_compare_branch and not is_choice_branch:
             self.body_value_entry.grid(row=0, column=3, sticky="ew", padx=(5, 0))
-        needs_value = kind not in ("음원 정지", "이미지 표시 종료", "대화창 숨김", "대화창 표시", "결과 거짓 설정", "결과 참 설정")
+        needs_value = kind not in ("음원 정지", "이미지 표시 종료", "대화창 숨김", "대화창 표시", "결과 거짓 설정", "게임 오버")
         self.body_value_entry.configure(
             state="normal" if needs_value and not (is_item or is_city or is_discovery_registration or is_event_result) else "disabled"
         )
         # 통합 명령은 "1차 → 2차 → 값"을 한 줄에 둔다.
         if subkinds and not is_state_compare_branch:
-            # 결과 설정은 플래그만 바꾸므로 별도 입력값을 받지 않는다.
-            if kind in ("음원 정지", "이미지 표시 종료", "결과 거짓 설정", "결과 참 설정"):
+            # 결과 설정·게임 종료는 별도 입력값을 받지 않는다.
+            if kind in ("음원 정지", "이미지 표시 종료", "결과 거짓 설정", "게임 오버"):
                 self.body_value_label.grid_remove()
                 self.body_value_entry.grid_remove()
             else:
@@ -2729,7 +2937,7 @@ class DisevEditor:
 
         no_input = {
             "음원 정지", "이미지 표시 종료", "대화창 숨김", "대화창 표시",
-            "결과 거짓 설정", "결과 참 설정", "주인공 성격 판정",
+            "결과 거짓 설정", "게임 오버", "델포이 신탁 출력",
         }
         if kind in no_input:
             return
@@ -2781,15 +2989,16 @@ class DisevEditor:
             # 2차 종류가 00 1E의 u16 값이므로 별도 수치 입력은 노출하지 않는다.
             return
         if kind in DIALOGUE_KINDS:
-            if kind == "대상 지정 대사":
-                aux_label(2, "대상 인물:")
-                aux_combo(3, self.body_character_var, tuple(
-                    self._body_target_display(character_id, name)
-                    for character_id, name in self.character_targets
-                ))
-                if not self.body_character_var.get() and self.character_targets:
-                    self._set_body_npc(self.character_targets[0][0])
             final_value("대사:", self.body_value_var, text_entry=True)
+            return
+        if kind == CITY_STRING_COMMAND_KIND:
+            aux_label(0, "도시:")
+            aux_combo(1, self.body_city_var, tuple(
+                self._body_target_display(city_id, name) for city_id, name in self.city_targets
+            ))
+            if not self.body_city_var.get() and self.city_targets:
+                self._set_body_city(self.city_targets[0][0])
+            final_value("문자열:", self.body_value_var, text_entry=True)
             return
         if kind in DISCOVERY_NAME_COMMAND_KINDS:
             aux_label(0, "대상 발견물:")
@@ -2807,8 +3016,16 @@ class DisevEditor:
             ))
             if not self.body_character_var.get() and self.character_targets:
                 self._set_body_npc(self.character_targets[0][0])
-            if kind == "인물 상태 비트 해제":
-                final_value("비트 번호:", self.body_value_var)
+            return
+        if kind in CITY_TARGET_COMMAND_KINDS:
+            aux_label(0, "도시:")
+            aux_combo(1, self.body_city_var, tuple(
+                self._body_target_display(city_id, name) for city_id, name in self.city_targets
+            ))
+            if not self.body_city_var.get() and self.city_targets:
+                self._set_body_city(self.city_targets[0][0])
+            if kind == "도시 시설 제거":
+                final_value("시설 번호 (0~15):", self.body_value_var)
             return
         if kind in ("아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리"):
             aux_label(0, "아이템:")
@@ -2845,13 +3062,34 @@ class DisevEditor:
             aux_label(0, "처리:")
             aux_combo(1, self.body_result_var, tuple(name for _code, name in EVENT_RESULT_CODES))
             return
+        if kind == "국가 멸망 처리":
+            aux_label(0, "국가/세력:")
+            aux_combo(1, self.body_city_var, tuple(
+                self._body_target_display(nation_id, name)
+                for nation_id, name in self.nation_targets
+            ))
+            if not self.body_city_var.get() and self.nation_targets:
+                self._set_body_nation(self.nation_targets[0][0])
+            return
         if kind in STAT_COMMAND_KINDS:
             range_value(
                 "값:", allow_negative=kind == "상태값 증감", end_label="종료값:",
             )
             return
         if kind in STAT_REFERENCE_COMMAND_KINDS:
-            final_value("참조 상태값 ID:", self.body_value_var)
+            aux_label(0, "4차:")
+            aux_combo(1, self.body_source_stat_var, tuple(name for _source_id, name in REFERENCE_OPERAND_SOURCES))
+            if not self.body_source_stat_var.get() and REFERENCE_OPERAND_SOURCES:
+                self.body_source_stat_var.set(REFERENCE_OPERAND_SOURCES[0][1])
+            target = self.body_detail_var.get() or "대상 상태값"
+            source = self.body_source_stat_var.get() or "참조 수치"
+            self.body_reference_preview_var.set(
+                f"{target}에 {source} 값을 더함 (0=소심 / 1=중립 / 2=거만)"
+            )
+            ttk.Label(value_row, text="실행:").grid(row=0, column=0, sticky="e")
+            ttk.Label(value_row, textvariable=self.body_reference_preview_var).grid(
+                row=0, column=1, sticky="w", padx=(5, 0),
+            )
             return
         if kind == "날짜 경과":
             range_value("일수:", end_label="종료 일수:")
@@ -2859,14 +3097,14 @@ class DisevEditor:
         if kind == "소지금 비교 분기":
             aux_label(0, "소지금 기준값:")
             aux_entry(1, self.body_value2_var)
-            final_value("이동할 행:", self.body_value_var)
+            final_value(branch_target_label(kind), self.body_value_var)
             return
         if kind == RUNTIME_REFERENCE_BRANCH_KIND:
             aux_label(0, "기준값:")
             aux_entry(1, self.body_value2_var)
             aux_label(2, "특수 참조 ID:")
             aux_entry(3, self.body_range_end_var)
-            final_value("이동할 행:", self.body_value_var)
+            final_value(branch_target_label(kind), self.body_value_var)
             return
         if kind in ("STORY0.CDS 외 분기", "STORY1.CDS 외 분기"):
             final_value("외부 분기값:", self.body_value_var)
@@ -2880,29 +3118,29 @@ class DisevEditor:
             else:
                 aux_label(2, "기준값:")
                 aux_entry(3, self.body_value2_var)
-            final_value("이동할 행:", self.body_value_var)
+            final_value(branch_target_label(kind), self.body_value_var)
             return
         if kind == STATE_REFERENCE_COMPARE_BRANCH_KIND:
             aux_label(2, "참조 상태값 ID:")
             aux_entry(3, self.body_value2_var)
-            final_value("이동할 행:", self.body_value_var)
+            final_value(branch_target_label(kind), self.body_value_var)
             return
         if kind == YEAR_RANGE_BRANCH_KIND:
             aux_label(2, "시작 연도:")
             aux_entry(3, self.body_value2_var)
             aux_label(4, "종료 연도:")
             aux_entry(5, self.body_range_end_var)
-            final_value("이동할 행:", self.body_value_var)
+            final_value(branch_target_label(kind), self.body_value_var)
             return
         if kind == YEAR_BRANCH_KIND:
             aux_label(2, "기준 연도:")
             aux_entry(3, self.body_value2_var)
-            final_value("이동할 행:", self.body_value_var)
+            final_value(branch_target_label(kind), self.body_value_var)
             return
         if kind == YEAR_UPPER_BRANCH_KIND:
             aux_label(2, "연도 상한:")
             aux_entry(3, self.body_value2_var)
-            final_value("이동할 행:", self.body_value_var)
+            final_value(branch_target_label(kind), self.body_value_var)
             return
         if kind == CITY_BRANCH_KIND:
             aux_label(2, "도시:")
@@ -2911,34 +3149,33 @@ class DisevEditor:
             ))
             if not self.body_city_var.get() and self.city_targets:
                 self._set_body_city(self.city_targets[0][0])
-            final_value("이동할 행:", self.body_value_var)
+            final_value(branch_target_label(kind), self.body_value_var)
             return
         if kind == CHOICE_BRANCH_KIND:
-            aux_label(2, "선택값:")
+            aux_label(2, "일치할 선택값:")
             aux_entry(3, self.body_value2_var)
-            final_value("이동할 행:", self.body_value_var)
+            final_value(branch_target_label(kind), self.body_value_var)
             return
         if kind in (
             ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND, HINT_BRANCH_KIND,
             DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND, NPC_BRANCH_KIND,
-            "결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "특수 분기",
+            "결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "부관 미고용 조건",
         ):
-            final_value("이동할 행:", self.body_value_var)
+            final_value(branch_target_label(kind), self.body_value_var)
             return
-        if kind in ("인물 이벤트 실행", "인물 이벤트 실행 (보조)"):
-            final_value("인물 이벤트 ID:", self.body_value_var)
+        if kind in ("일기토 실행", "육상전 실행"):
+            final_value("특수 전투 상대 ID:", self.body_value_var)
             return
-        if kind == "이벤트 분류 설정":
-            final_value("실행 모드:", self.body_value_var)
+        if kind == "일기토 연출 세트 설정":
+            final_value("일기토 연출 세트 (0~6):", self.body_value_var)
             return
         if kind == "이벤트 조건 판정":
-            final_value("숨은 수치 코드:", self.body_value_var)
+            if self.body_subkind_var.get() in EVENT_CONDITION_CODE_BY_SUBKIND:
+                return
+            final_value("미지원 판정 ID:", self.body_value_var)
             return
         if kind == "이벤트 내부 참조":
-            final_value("파트 오프셋:", self.body_value_var)
-            return
-        if kind == "내부 상태 설정":
-            final_value("이벤트 상태 ID:", self.body_value_var)
+            final_value("이동할 행:", self.body_value_var)
             return
         if kind == "특수 상태 처리":
             final_value("원본 인수:", self.body_value_var)
@@ -3087,14 +3324,14 @@ class DisevEditor:
             detail_kind = MOVE_DETAIL_TO_KIND.get((self.body_subkind_var.get(), self.body_detail_var.get()))
             if detail_kind is not None:
                 return detail_kind
-            return BODY_GROUP_TO_KIND.get((group, self.body_subkind_var.get()), "특수 분기")
+            return BODY_GROUP_TO_KIND.get((group, self.body_subkind_var.get()), "부관 미고용 조건")
         if group == "상태값":
             subkind = self.body_subkind_var.get()
             if subkind == "증감":
                 return "상태값 증감"
             if subkind == "설정":
                 return "상태값 설정"
-            if subkind == "증감 (상태값 참조)":
+            if subkind == "증감 (참조 수치)":
                 return "상태값 참조 증가"
             if self.body_random_var.get():
                 return STATE_LESS_RANDOM_BRANCH_KIND if subkind == "미만" else STATE_LESS_OR_EQUAL_RANDOM_BRANCH_KIND
@@ -3237,10 +3474,25 @@ class DisevEditor:
         text = self.body_city_var.get().strip()
         return self._body_target_id_from_text(text, self.city_targets, "목록에 있는 도시를 선택하세요.")
 
+    def _set_body_nation(self, nation_id: int) -> None:
+        for candidate_id, name in self.nation_targets:
+            if candidate_id == nation_id:
+                self.body_city_var.set(self._body_target_display(candidate_id, name))
+                return
+        self.body_city_var.set(str(nation_id))
+
+    def _body_nation_id(self) -> int:
+        text = self.body_city_var.get().strip()
+        return self._body_target_id_from_text(
+            text, self.nation_targets, "목록에 있는 국가/세력을 선택하세요.",
+        )
+
     def _body_input_value(self, kind: str) -> str:
         """Return the appropriate editor value for the selected body command."""
         if kind == "특수 수치 판정":
             return self.special_check_value_var.get().strip()
+        if kind in STAT_REFERENCE_COMMAND_KINDS:
+            return str(self._body_source_stat_id())
         if kind == "음원 정지":
             # 새 정지 명령에는 별도 지정값이 필요 없도록 0을 기본값으로 쓴다.
             return "0"
@@ -3248,6 +3500,8 @@ class DisevEditor:
             return str(self._body_item_id())
         if kind == "신도시 생성":
             return str(self._body_city_id())
+        if kind == "국가 멸망 처리":
+            return str(self._body_nation_id())
         if kind == "발견물 등록/발견 처리":
             return str(self._body_character_id())
         if kind in RANDOM_RANGE_COMMAND_KINDS:
@@ -3287,6 +3541,24 @@ class DisevEditor:
             self._autosize_combobox(self.body_stat_target_combo)
         self.body_stat_target_var.set(item)
 
+    def _set_body_source_stat(self, stat_id: int) -> None:
+        """참조 수치 종류 코드를 이름으로 선택·표시한다."""
+        self.body_source_stat_var.set(REFERENCE_OPERAND_SOURCE_NAMES.get(stat_id, f"참조 수치 코드 {stat_id}"))
+
+    def _body_source_stat_id(self) -> int:
+        text = self.body_source_stat_var.get().strip()
+        for source_id, name in REFERENCE_OPERAND_SOURCES:
+            if text == name:
+                return source_id
+        if text.startswith("참조 수치 코드 "):
+            try:
+                source_id = int(text.removeprefix("참조 수치 코드 "))
+            except ValueError as exc:
+                raise ValueError("목록에서 참조 수치 종류를 선택하세요.") from exc
+            if 0 <= source_id <= 0xFFFF:
+                return source_id
+        raise ValueError("목록에서 참조 수치 종류를 선택하세요.")
+
     def _body_stat_id(self) -> int:
         text = (
             self.body_detail_var.get().strip()
@@ -3324,6 +3596,7 @@ class DisevEditor:
         choice_value: int | None = None,
         npc_type: int = 0x0D,
         item_id: int | None = None,
+        battlefield: str = "현재 위치 지형 (자동)",
     ) -> dict[str, object]:
         if kind in DIALOGUE_KINDS:
             encoded = (
@@ -3333,15 +3606,6 @@ class DisevEditor:
             )
             if b"\0" in encoded:
                 raise ValueError("대사에는 NUL 문자를 넣을 수 없습니다.")
-            if kind == "대상 지정 대사":
-                if character_id is None or not 0 <= character_id <= 0xFFFF:
-                    raise ValueError("목록에서 대상 인물을 선택하세요.")
-                return {
-                    "kind": kind,
-                    "raw": b"\x20\x0A" + speaker_prefix + encoded + b"\0\x08" + struct.pack("<H", character_id),
-                    "value": value, "character_id": character_id, "speaker_prefix": speaker_prefix,
-                    "editable": True, "flag": 0x20,
-                }
             # 일반 대사는 00 0A로 시작한다. 00 창 플래그가 없으면 분기 직후의
             # 대사를 게임이 본문 명령으로 처리하지 못하는 경우가 있다.
             flag = b"\x0B" if kind == "예/아니오 대사" else b"\x10" if kind == "다중 선택지 대사" else b"\x00"
@@ -3353,6 +3617,19 @@ class DisevEditor:
                 "speaker_prefix": speaker_prefix,
                 "editable": True,
                 "flag": 0x0B if kind == "예/아니오 대사" else 0x10 if kind == "다중 선택지 대사" else None,
+            }
+        if kind == CITY_STRING_COMMAND_KIND:
+            encoded = encode_dialogue_text(value)
+            if b"\0" in encoded:
+                raise ValueError("문자열에는 NUL 문자를 넣을 수 없습니다.")
+            if character_id is None or not 0 <= character_id <= 0xFFFF:
+                raise ValueError("목록에서 대상 도시를 선택하세요.")
+            # 20 0A는 대사 명령이 아니라 도시별 임시 문자열 목록에 넣는 형식이다.
+            return {
+                "kind": kind,
+                "raw": b"\x20\x0A" + encoded + b"\0\x08" + struct.pack("<H", character_id),
+                "value": value, "character_id": character_id,
+                "editable": True, "flag": 0x20,
             }
         if kind == "특수 조우 연출 설정":
             numeric_value = int(str(value).strip())
@@ -3374,55 +3651,78 @@ class DisevEditor:
                 "value": numeric_value,
                 "editable": True,
             }
-        if kind in ("인물 이벤트 실행", "인물 이벤트 실행 (보조)"):
+        if kind in ("일기토 실행", "육상전 실행"):
             numeric_value = int(str(value).strip())
             if not 0 <= numeric_value <= 65535:
-                raise ValueError("인물 이벤트 ID는 0~65,535 범위여야 합니다.")
-            opcode = 0x0C if kind == "인물 이벤트 실행" else 0x2F
+                raise ValueError("특수 전투 상대 ID는 0~65,535 범위여야 합니다.")
+            if kind == "일기토 실행":
+                return {
+                    "kind": kind,
+                    "raw": b"\x0C\x0D" + struct.pack("<H", numeric_value),
+                    "value": numeric_value,
+                    "editable": True,
+                }
+            opcode = BATTLEFIELD_OPCODE_BY_SUBKIND.get(battlefield)
+            if opcode is None:
+                raise ValueError("목록에서 육상전 전장을 선택하세요.")
             return {
                 "kind": kind,
-                "raw": bytes((opcode, 0x0D)) + struct.pack("<H", numeric_value),
+                "raw": bytes((0x2F, opcode)) + struct.pack("<H", numeric_value),
                 "value": numeric_value,
+                "battlefield": battlefield,
                 "editable": True,
             }
         if kind in CHARACTER_TARGET_COMMAND_KINDS:
             if character_id is None or not 0 <= character_id <= 0xFFFF:
                 raise ValueError("목록에서 인물을 선택하세요.")
             raw_prefix = {
-                "인물 참조 설정": b"\x26\x1C\x1A\0\x08",
                 "인물 상태 처리 1": b"\x38\x0D",
                 "인물 상태 처리 2": b"\x3D\x0D",
-                "인물 상태 처리 3": b"\x23\x08",
-                "인물 상태 처리 4": b"\x22\x08",
-                "인물 상태 비트 해제": b"\x22\x10",
-                "인물 선택 판정": b"\x2F\x08",
-                "인물 위치 판정": b"\x3C\x08",
             }[kind]
-            if kind == "인물 상태 비트 해제":
-                bit_index = int(str(value).strip())
-                if not 0 <= bit_index <= 15:
-                    raise ValueError("해제할 비트 번호는 0~15 범위여야 합니다.")
-                raw_prefix += struct.pack("<H", bit_index) + b"\x08"
             return {
                 "kind": kind, "raw": raw_prefix + struct.pack("<H", character_id),
                 "value": character_id, "character_id": character_id, "editable": True,
             }
+        if kind in CITY_TARGET_COMMAND_KINDS:
+            if character_id is None or not 0 <= character_id <= 0xFFFF:
+                raise ValueError("목록에서 도시를 선택하세요.")
+            raw_prefix = {
+                "도시 국적 변경": b"\x26\x1C\x1A\0\x08",
+                "도시 점령지 설정": b"\x23\x08",
+                "도시 점령지 해제": b"\x25\x08",
+                "도시 제거": b"\x22\x08",
+                "도시 시설 제거": b"\x22\x10",
+                "도시 상태 판정": b"\x3C\x08",
+            }[kind]
+            if kind == "도시 시설 제거":
+                bit_index = int(str(value).strip())
+                if not 0 <= bit_index <= 15:
+                    raise ValueError("제거할 시설 번호는 0~15 범위여야 합니다.")
+                raw_prefix += struct.pack("<H", bit_index) + b"\x08"
+            return {
+                "kind": kind, "raw": raw_prefix + struct.pack("<H", character_id),
+                "value": bit_index if kind == "도시 시설 제거" else character_id,
+                "character_id": character_id, "editable": True,
+            }
         if kind == "이벤트 내부 참조":
-            numeric_value = int(str(value).strip())
-            if not 0 <= numeric_value <= 65535:
-                raise ValueError("파트 오프셋은 0~65,535 범위여야 합니다.")
+            target_index = int(str(value).strip())
+            if not 1 <= target_index <= 65535:
+                raise ValueError("이동할 행은 1~65,535 범위여야 합니다.")
             return {
                 "kind": kind,
-                "raw": b"\x30\x1D" + struct.pack("<H", numeric_value),
-                "value": numeric_value,
+                # 실제 u16 오프셋은 _encode_body_tokens에서 현재 본문 길이에
+                # 맞춰 다시 계산한다. 여기의 0은 임시값이다.
+                "raw": b"\x30\x1D\0\0",
+                "value": target_index,
+                "target_index": target_index,
                 "editable": True,
             }
-        if kind == "주인공 성격 판정":
+        if kind == "델포이 신탁 출력":
             return {"kind": kind, "raw": b"\x31", "value": None, "editable": True}
-        if kind == "이벤트 분류 설정":
+        if kind == "일기토 연출 세트 설정":
             numeric_value = int(str(value).strip())
-            if not 0 <= numeric_value <= 65535:
-                raise ValueError("실행 모드는 0~65,535 범위여야 합니다.")
+            if not 0 <= numeric_value <= 6:
+                raise ValueError("일기토 연출 세트는 0~6 범위여야 합니다.")
             return {
                 "kind": kind,
                 "raw": b"\x26\x0F" + struct.pack("<H", numeric_value),
@@ -3432,7 +3732,7 @@ class DisevEditor:
         if kind == "이벤트 조건 판정":
             numeric_value = int(str(value).strip())
             if not 0 <= numeric_value <= 65535:
-                raise ValueError("숨은 수치 코드는 0~65,535 범위여야 합니다.")
+                raise ValueError("상태값 ID는 0~65,535 범위여야 합니다.")
             return {
                 "kind": kind,
                 "raw": b"\x35\x1C" + struct.pack("<H", numeric_value),
@@ -3472,7 +3772,7 @@ class DisevEditor:
                 "value": city_id,
                 "editable": True,
             }
-        if kind in ("결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "특수 분기"):
+        if kind in ("결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "부관 미고용 조건"):
             target_index = int(str(value).strip())
             if not 1 <= target_index <= 65535:
                 raise ValueError("이동할 행은 1~65,535 범위여야 합니다.")
@@ -3480,7 +3780,7 @@ class DisevEditor:
                 "결과 거짓 시 이동": 0x45,
                 "결과 참 시 이동": 0x47,
                 "이전 조건 참 시 이동": 0x4B,
-                "특수 분기": 0x56,
+                "부관 미고용 조건": 0x56,
             }[kind]
             return {
                 "kind": kind,
@@ -3513,11 +3813,11 @@ class DisevEditor:
                 "kind": kind, "raw": b"\x01\x15" + struct.pack("<H", flag_id),
                 "value": flag_id, "editable": True,
             }
-        if kind == "내부 상태 설정":
-            state_id = int(str(value).strip())
-            if not 0 <= state_id <= 0xFFFF:
-                raise ValueError("이벤트 상태 ID는 0~65,535 범위여야 합니다.")
-            return {"kind": kind, "raw": b"\x22\x00" + struct.pack("<H", state_id), "value": state_id, "editable": True}
+        if kind == "국가 멸망 처리":
+            nation_id = int(str(value).strip())
+            if not 0 <= nation_id <= 77:
+                raise ValueError("국가/세력 ID는 0~77 범위여야 합니다.")
+            return {"kind": kind, "raw": b"\x22\x00" + struct.pack("<H", nation_id), "value": nation_id, "editable": True}
         if kind == "특수 상태 처리":
             numeric_value = int(str(value).strip())
             if not 0 <= numeric_value <= 0xFFFFFFFF:
@@ -3596,7 +3896,7 @@ class DisevEditor:
             return {"kind": kind, "raw": b"\x49", "value": None, "editable": True}
         if kind == "결과 거짓 설정":
             return {"kind": kind, "raw": b"\x46", "value": None, "editable": True}
-        if kind == "결과 참 설정":
+        if kind == "게임 오버":
             return {"kind": kind, "raw": b"\x4A", "value": None, "editable": True}
         if kind == "이벤트 결과 코드":
             text = str(value).strip()
@@ -3789,7 +4089,7 @@ class DisevEditor:
             if stat_id not in STAT_TARGET_NAMES:
                 raise ValueError("실행 파일에서 처리되는 대상 상태값을 선택하세요.")
             if compare_value is None or not 0 <= int(compare_value) <= 0xFFFF:
-                raise ValueError("참조 상태값 ID는 0~65,535 범위여야 합니다.")
+                raise ValueError("참조 수치 종류 코드는 0~65,535 범위여야 합니다.")
             source_stat_id = int(compare_value)
             return {
                 "kind": kind,
@@ -3911,7 +4211,7 @@ class DisevEditor:
             messagebox.showerror(ui("body_add_failed"), ui("select_command_to_add"), parent=self.root)
             return
         try:
-            character_id = self._body_npc_id(self.sponsor_targets if self.body_detail_var.get() == "후원자" else self.character_targets) if kind == NPC_BRANCH_KIND else self._body_npc_id() if kind == "대상 지정 대사" or kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_city_id() if kind == CITY_BRANCH_KIND else int(self.body_range_end_var.get().strip()) if kind == RUNTIME_REFERENCE_BRANCH_KIND else self._body_character_id() if kind in DISCOVERY_NAME_COMMAND_KINDS + (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
+            character_id = self._body_npc_id(self.sponsor_targets if self.body_detail_var.get() == "후원자" else self.character_targets) if kind == NPC_BRANCH_KIND else self._body_npc_id() if kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_city_id() if kind == CITY_STRING_COMMAND_KIND or kind in CITY_TARGET_COMMAND_KINDS + (CITY_BRANCH_KIND,) else int(self.body_range_end_var.get().strip()) if kind == RUNTIME_REFERENCE_BRANCH_KIND else self._body_character_id() if kind in DISCOVERY_NAME_COMMAND_KINDS + (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
             speaker_prefix = self._body_speaker_prefix() if kind in DIALOGUE_KINDS else b""
             stat_id = self._body_stat_id() if kind in STAT_COMMAND_KINDS + STAT_REFERENCE_COMMAND_KINDS + NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND,) else None
             token = self._new_body_token(
@@ -3919,15 +4219,16 @@ class DisevEditor:
                 hint_id=self._body_hint_id() if kind in (HINT_BRANCH_KIND, "힌트 획득") else None,
                 item_id=self._body_item_id() if kind in (ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND) else None,
                 hint_active=self.body_hint_state_var.get() == "활성", speaker_prefix=speaker_prefix,
-                compare_value=self.special_difficulty_var.get().strip() if kind == "특수 수치 판정" else int(self.body_value_var.get().strip()) if kind in STAT_REFERENCE_COMMAND_KINDS else f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_RANGE_BRANCH_KIND,) else self.body_value2_var.get().strip() if kind in (YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND) else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND, "소지금 비교 분기", RUNTIME_REFERENCE_BRANCH_KIND) else None,
+                compare_value=self.special_difficulty_var.get().strip() if kind == "특수 수치 판정" else self._body_source_stat_id() if kind in STAT_REFERENCE_COMMAND_KINDS else f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_RANGE_BRANCH_KIND,) else self.body_value2_var.get().strip() if kind in (YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND) else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND, "소지금 비교 분기", RUNTIME_REFERENCE_BRANCH_KIND) else None,
                 choice_value=int(self.body_value2_var.get().strip()) if kind == CHOICE_BRANCH_KIND else None,
                 npc_type=0x12 if kind == NPC_BRANCH_KIND and self.body_detail_var.get() == "후원자" else 0x0D,
+                battlefield=self.body_detail_var.get(),
             )
         except (UnicodeEncodeError, ValueError) as exc:
             messagebox.showerror(ui("body_add_failed"), str(exc), parent=self.root)
             return
         position = len(self.body_tokens) - 1 if self.body_tokens and self.body_tokens[-1]["kind"] == "본문 끝" else len(self.body_tokens)
-        self._shift_branch_targets_for_insert(position)
+        self._shift_branch_targets_for_insert(position, len(bytes(token["raw"])))
         self.body_tokens.insert(position, token)
         self.selected_body_index = position
         self.pending = True
@@ -3949,7 +4250,7 @@ class DisevEditor:
             messagebox.showerror(ui("body_insert_failed"), ui("select_command_to_insert"), parent=self.root)
             return
         try:
-            character_id = self._body_npc_id(self.sponsor_targets if self.body_detail_var.get() == "후원자" else self.character_targets) if kind == NPC_BRANCH_KIND else self._body_npc_id() if kind == "대상 지정 대사" or kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_city_id() if kind == CITY_BRANCH_KIND else self._body_character_id() if kind in DISCOVERY_NAME_COMMAND_KINDS + (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
+            character_id = self._body_npc_id(self.sponsor_targets if self.body_detail_var.get() == "후원자" else self.character_targets) if kind == NPC_BRANCH_KIND else self._body_npc_id() if kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_city_id() if kind == CITY_STRING_COMMAND_KIND or kind in CITY_TARGET_COMMAND_KINDS + (CITY_BRANCH_KIND,) else self._body_character_id() if kind in DISCOVERY_NAME_COMMAND_KINDS + (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
             speaker_prefix = self._body_speaker_prefix() if kind in DIALOGUE_KINDS else b""
             stat_id = self._body_stat_id() if kind in STAT_COMMAND_KINDS + STAT_REFERENCE_COMMAND_KINDS + NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND,) else None
             token = self._new_body_token(
@@ -3957,14 +4258,15 @@ class DisevEditor:
                 hint_id=self._body_hint_id() if kind in (HINT_BRANCH_KIND, "힌트 획득") else None,
                 item_id=self._body_item_id() if kind in (ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND) else None,
                 hint_active=self.body_hint_state_var.get() == "활성", speaker_prefix=speaker_prefix,
-                compare_value=self.special_difficulty_var.get().strip() if kind == "특수 수치 판정" else int(self.body_value_var.get().strip()) if kind in STAT_REFERENCE_COMMAND_KINDS else f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_RANGE_BRANCH_KIND,) else self.body_value2_var.get().strip() if kind == YEAR_BRANCH_KIND else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND,) else None,
+                compare_value=self.special_difficulty_var.get().strip() if kind == "특수 수치 판정" else self._body_source_stat_id() if kind in STAT_REFERENCE_COMMAND_KINDS else f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_RANGE_BRANCH_KIND,) else self.body_value2_var.get().strip() if kind == YEAR_BRANCH_KIND else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND,) else None,
                 choice_value=int(self.body_value2_var.get().strip()) if kind == CHOICE_BRANCH_KIND else None,
                 npc_type=0x12 if kind == NPC_BRANCH_KIND and self.body_detail_var.get() == "후원자" else 0x0D,
+                battlefield=self.body_detail_var.get(),
             )
         except (UnicodeEncodeError, ValueError) as exc:
             messagebox.showerror(ui("body_insert_failed"), str(exc), parent=self.root)
             return
-        self._shift_branch_targets_for_insert(insert_index)
+        self._shift_branch_targets_for_insert(insert_index, len(bytes(token["raw"])))
         self.body_tokens.insert(insert_index, token)
         self.selected_body_index = insert_index
         self.pending = True
@@ -3984,8 +4286,9 @@ class DisevEditor:
             messagebox.showerror(ui("body_remove_failed"), ui("body_end_cannot_remove"), parent=self.root)
             return
         removed_index = remove_index
+        removed_size = len(bytes(self.body_tokens[removed_index]["raw"]))
         self.body_tokens.pop(removed_index)
-        self._shift_branch_targets_for_remove(removed_index)
+        self._shift_branch_targets_for_remove(removed_index, removed_size)
         self.selected_body_index = min(self.selected_body_index, len(self.body_tokens) - 1)
         if self.selected_body_index is not None and self.body_tokens[self.selected_body_index]["kind"] == "본문 끝":
             self.selected_body_index = self.selected_body_index - 1 if self.selected_body_index else None
@@ -4185,6 +4488,11 @@ class DisevEditor:
         candidate = self.disev_path.with_name("CDS_95.EXE")
         if candidate.exists():
             self._load_exe_mapping(candidate, quiet=True)
+        if not self.rows:
+            # EXE가 다른 폴더에 있거나 레코드 탐색에 실패해도 DISEV 자체는
+            # 편집할 수 있다. 이름만 알 수 없는 상태로 파트 목록을 유지한다.
+            self.rows = self._fallback_discovery_rows(len(self.parts))
+            self.discovery_part_map = {index: index for index in range(len(self.parts))}
         self._refresh_tree()
         self.root.title(f"{APP_TITLE} - [{self.disev_path.name}]")
         self.status_var.set(ui("status_loaded", len(parts)))
@@ -4196,6 +4504,23 @@ class DisevEditor:
             # Treeview의 프로그램 선택은 <<TreeviewSelect>>를 보장하지 않는다.
             # 파일을 연 직후에도 첫 발견물의 조건·본문을 바로 표시한다.
             self._select_part()
+
+    @staticmethod
+    def _fallback_discovery_rows(part_count: int) -> list[disev.DiscoveryRow]:
+        """EXE 이름표를 읽지 못할 때도 DISEV 파트를 목록에 표시한다."""
+        return [
+            disev.DiscoveryRow(
+                index=index,
+                file_offset=0,
+                name=f"파트 {index:03d}",
+                category=0,
+                game_id=index,
+                still=0,
+                avi=0,
+                cg=0,
+            )
+            for index in range(part_count)
+        ]
 
     def _load_exe_mapping(self, path: Path, quiet: bool) -> None:
         try:
@@ -4342,7 +4667,8 @@ class DisevEditor:
         self.status_var.set(ui("status_part_selected", index, row.name if row else ui("unmapped")))
 
     def _show_body_commands(self, part: bytes, body_start: int, row: disev.DiscoveryRow | None) -> None:
-        self.body_tokens = self._decode_body_tokens(part[body_start:])
+        self.body_part_offset = body_start
+        self.body_tokens = self._decode_body_tokens(part[body_start:], body_part_offset=body_start)
         self.selected_body_index = None
         self.body_tree.delete(*self.body_tree.get_children())
         for index, token in enumerate(self.body_tokens):
@@ -4368,7 +4694,7 @@ class DisevEditor:
         self.root.after_idle(lambda: self._autosize_tree_columns(self.body_tree, skip=("value",)))
 
     @staticmethod
-    def _decode_body_tokens(body: bytes) -> list[dict[str, object]]:
+    def _decode_body_tokens(body: bytes, *, body_part_offset: int = 4) -> list[dict[str, object]]:
         """본문을 명령 행으로 나누되, 알 수 없는 바이트도 원본 그대로 보존한다."""
         tokens: list[dict[str, object]] = []
         i = 0
@@ -4433,11 +4759,11 @@ class DisevEditor:
                 tokens.append({"kind": YEAR_UPPER_BRANCH_KIND, "raw": body[i : i + 7], "value": None, "year": year, "branch_prefix": body[i : i + 5], "editable": True})
                 i += 7
                 continue
-            # 43 2F 0D [인물 u16] [상대 이동]: 보조 인물 이벤트 결과에 따른 분기.
-            # 보조 이벤트 자체의 세부 결과 규칙이 확정되기 전까지 읽기 전용으로 유지한다.
+            # 43 2F 0D [상대 u16] [상대 이동]: 육상전 결과에 따른 분기.
+            # 세부 결과 규칙이 확정되기 전까지 읽기 전용으로 유지한다.
             if i + 8 <= len(body) and body[i : i + 3] == b"\x43\x2F\x0D":
                 character_id = struct.unpack_from("<H", body, i + 3)[0]
-                tokens.append({"kind": f"보조 인물 이벤트 조건 이동: 인물 ID {character_id}", "raw": body[i : i + 8], "value": None, "editable": False})
+                tokens.append({"kind": f"육상전 결과 조건 이동: 상대 ID {character_id}", "raw": body[i : i + 8], "value": None, "editable": False})
                 i += 8
                 continue
             # 43 0F/12 05 [아이템 u16] [상대 이동]: 아이템 소지 여부 조건이 거짓이면 분기한다.
@@ -4482,45 +4808,55 @@ class DisevEditor:
                 })
                 i += 4
                 continue
-            # 26 0F [u16]: 이후 실행 방식 2 인물 이벤트가 사용할 실행 모드를 설정한다.
+            # 26 0F [세트]: 다음 0C 0D 일기토가 읽을 FIGHTER.CDS 그래픽·팔레트 세트를 설정한다.
             if i + 4 <= len(body) and body[i : i + 2] == b"\x26\x0F":
-                tokens.append({"kind": "이벤트 분류 설정", "raw": body[i : i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
+                tokens.append({"kind": "일기토 연출 세트 설정", "raw": body[i : i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
-            # 26 1C 1A 00 08 [인물 u16]: 이벤트가 사용할 역사 인물 참조를 바인딩한다.
+            # 26 1C 1A 00 08 [도시 u16]: 도시의 소속 국가를 주인공 국적으로 변경한다.
             if i + 7 <= len(body) and body[i : i + 5] == b"\x26\x1C\x1A\0\x08":
-                character_id = struct.unpack_from("<H", body, i + 5)[0]
+                city_id = struct.unpack_from("<H", body, i + 5)[0]
                 tokens.append({
-                    "kind": "인물 참조 설정", "raw": body[i : i + 7], "value": character_id,
-                    "character_id": character_id, "editable": True,
+                    "kind": "도시 국적 변경", "raw": body[i : i + 7], "value": city_id,
+                    "character_id": city_id, "editable": True,
                 })
                 i += 7
                 continue
-            # 23 08 [인물 u16]: 인물 런타임 상태 비트 0x02를 설정한다.
+            # 23 08 [도시 u16]: 도시를 점령지화한다(flags |= 0x02).
             if i + 4 <= len(body) and body[i : i + 2] == b"\x23\x08":
-                character_id = struct.unpack_from("<H", body, i + 2)[0]
+                city_id = struct.unpack_from("<H", body, i + 2)[0]
                 tokens.append({
-                    "kind": "인물 상태 처리 3", "raw": body[i : i + 4], "value": character_id,
-                    "character_id": character_id, "editable": True,
+                    "kind": "도시 점령지 설정", "raw": body[i : i + 4], "value": city_id,
+                    "character_id": city_id, "editable": True,
                 })
                 i += 4
                 continue
-            # 22 10 [비트 u16] 08 [인물 u16]: 지정 인물의 상태 비트를 해제한다.
+            # 25 08 [도시 u16]: 도시를 비점령지화한다(flags &= ~0x02).
+            if i + 4 <= len(body) and body[i : i + 2] == b"\x25\x08":
+                city_id = struct.unpack_from("<H", body, i + 2)[0]
+                tokens.append({
+                    "kind": "도시 점령지 해제", "raw": body[i : i + 4], "value": city_id,
+                    "character_id": city_id, "editable": True,
+                })
+                i += 4
+                continue
+            # 22 10 [시설 비트 번호 u16] 08 [도시 u16]: 지정 도시의 시설 비트를 해제한다.
             if i + 7 <= len(body) and body[i : i + 2] == b"\x22\x10" and body[i + 4] == 0x08:
                 bit_index = struct.unpack_from("<H", body, i + 2)[0]
-                character_id = struct.unpack_from("<H", body, i + 5)[0]
-                tokens.append({"kind": "인물 상태 비트 해제", "raw": body[i : i + 7], "value": bit_index, "character_id": character_id, "editable": bit_index <= 15})
+                city_id = struct.unpack_from("<H", body, i + 5)[0]
+                tokens.append({"kind": "도시 시설 제거", "raw": body[i : i + 7], "value": bit_index, "character_id": city_id, "editable": bit_index <= 15})
                 i += 7
                 continue
-            # 22 08 [인물 u16]: 인물 런타임 상태 비트 0x04를 설정한다.
+            # 22 08 [도시 u16]: 도시를 제거·비활성화한다(flags |= 0x04).
             if i + 4 <= len(body) and body[i : i + 2] == b"\x22\x08":
-                character_id = struct.unpack_from("<H", body, i + 2)[0]
-                tokens.append({"kind": "인물 상태 처리 4", "raw": body[i : i + 4], "value": character_id, "character_id": character_id, "editable": True})
+                city_id = struct.unpack_from("<H", body, i + 2)[0]
+                tokens.append({"kind": "도시 제거", "raw": body[i : i + 4], "value": city_id, "character_id": city_id, "editable": True})
                 i += 4
                 continue
-            # 22 00 [u16]: 이벤트 상태 레코드의 상태값을 2로 설정한다.
+            # 22 00 [국가/세력 ID u16]: 78개 국가 런타임 레코드의 +4 상태값을
+            # 2(멸망)로 설정한다. 예: 72=아즈텍 왕국, 77=잉카 제국.
             if i + 4 <= len(body) and body[i : i + 2] == b"\x22\x00":
-                tokens.append({"kind": "내부 상태 설정", "raw": body[i : i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
+                tokens.append({"kind": "국가 멸망 처리", "raw": body[i : i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
             # 34 1C 02 00 1A [u32]: 현재 투입 인원(대원/선원)을 올림하여 절반으로 설정한다.
@@ -4528,16 +4864,19 @@ class DisevEditor:
                 tokens.append({"kind": "특수 상태 처리", "raw": body[i : i + 9], "value": struct.unpack_from("<I", body, i + 5)[0], "editable": True})
                 i += 9
                 continue
-            # 2F 08 [인물 u16]: 지정 인물을 대상으로 선택 창을 열고 결과를 판정한다.
+            # 2F 08 [상대 u16]: 석조/도시 전장을 고정해 육상전을 실행한다.
             if i + 4 <= len(body) and body[i : i + 2] == b"\x2F\x08":
-                character_id = struct.unpack_from("<H", body, i + 2)[0]
-                tokens.append({"kind": "인물 선택 판정", "raw": body[i : i + 4], "value": character_id, "character_id": character_id, "editable": True})
+                target_id = struct.unpack_from("<H", body, i + 2)[0]
+                tokens.append({
+                    "kind": "육상전 실행", "raw": body[i : i + 4], "value": target_id,
+                    "battlefield": "석조/도시 전장 (고정)", "editable": True,
+                })
                 i += 4
                 continue
-            # 3C 08 [인물 u16]: 지정 인물의 위치·상태를 대상으로 판정한다.
+            # 3C 08 [도시 u16]: 지정 도시의 상태를 판정한다.
             if i + 4 <= len(body) and body[i : i + 2] == b"\x3C\x08":
-                character_id = struct.unpack_from("<H", body, i + 2)[0]
-                tokens.append({"kind": "인물 위치 판정", "raw": body[i : i + 4], "value": character_id, "character_id": character_id, "editable": True})
+                city_id = struct.unpack_from("<H", body, i + 2)[0]
+                tokens.append({"kind": "도시 상태 판정", "raw": body[i : i +4], "value": city_id, "character_id": city_id, "editable": True})
                 i += 4
                 continue
             # 0D 0D [u16]: 지정한 해양 괴물/조우 상대와 전투를 시작한다.
@@ -4545,7 +4884,7 @@ class DisevEditor:
                 tokens.append({"kind": "해상 전투", "raw": body[i : i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
-            # 38 0D는 역사 인물 런타임 이벤트 상태를 초기화하고,
+            # 38 0D는 인물 런타임 레코드 +0xF8의 이벤트 상태를 0으로 초기화하고,
             # 3D 0D는 지정 인물을 통역으로 고용하거나 기존 통역을 교체한다.
             if i + 4 <= len(body) and body[i + 1] == 0x0D and body[i] in (0x38, 0x3D):
                 kind = "인물 상태 처리 1" if body[i] == 0x38 else "인물 상태 처리 2"
@@ -4556,18 +4895,24 @@ class DisevEditor:
                 })
                 i += 4
                 continue
-            # 0C/2F 0D [u16]: 인물 이벤트를 각각 실행 방식 2/3으로 실행한다.
+            # 0C 0D [상대 u16]: FIGHTER.CDS 연출 세트를 사용하는 일기토를 실행한다.
+            # 2F 0D [상대 u16]: 현재 지도 타일의 지형으로 육상전을 실행한다.
             if i + 4 <= len(body) and body[i + 1] == 0x0D and body[i] in (0x0C, 0x2F):
-                kind = "인물 이벤트 실행" if body[i] == 0x0C else "인물 이벤트 실행 (보조)"
-                tokens.append({"kind": kind, "raw": body[i : i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
+                kind = "일기토 실행" if body[i] == 0x0C else "육상전 실행"
+                token = {"kind": kind, "raw": body[i : i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True}
+                if kind == "육상전 실행":
+                    token["battlefield"] = "현재 위치 지형 (자동)"
+                tokens.append(token)
                 i += 4
                 continue
-            # 30 1D [u16]: 현재 파트 시작 기준 바이트 오프셋으로 즉시 이동한다.
+            # 30 1D [u16]: 파트 헤더 뒤(+4) 기준 오프셋으로 즉시 이동한다.
             if i + 4 <= len(body) and body[i : i + 2] == b"\x30\x1D":
                 tokens.append({"kind": "이벤트 내부 참조", "raw": body[i : i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
-            # 35 1C [u16]: 숨은 수치 코드(6·18·21·23)를 확률 판정해 결과를 제공한다.
+            # 35 1C [상태값 u16]: 6=무력, 18=운, 21=지력, 23=신앙심을
+            # R(100) <= 상태값+1로 판정한다. 6·18·21은 전용 연출도 재생한다.
+            # 그 밖의 값은 EXE 분기표에서 아무 처리 없이 이전 판정 결과를 유지한다.
             if i + 4 <= len(body) and body[i : i + 2] == b"\x35\x1C":
                 tokens.append({"kind": "이벤트 조건 판정", "raw": body[i : i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
@@ -4644,19 +4989,17 @@ class DisevEditor:
                     })
                     i = end + 2
                     continue
-            # 20 0A [문자열] 00 08 [인물 u16]: 대사와 함께 런타임 인물 대상을 지정한다.
-            if i + 8 <= len(body) and body[i : i + 2] == b"\x20\x0A":
+            # 20 0A [문자열] 00 08 [도시 u16]: 도시별 임시 문자열을 등록한다.
+            if i + 7 <= len(body) and body[i : i + 2] == b"\x20\x0A":
                 text_start = i + 2
                 end = body.find(b"\0", text_start)
                 if end >= 0 and end + 4 <= len(body) and body[end + 1] == 0x08:
                     source = body[text_start:end]
-                    marker = source.find(b"\x81\x46", 0, min(len(source), 40))
-                    speaker_prefix = source[: marker + 2] if marker >= 0 else b""
                     _speaker, text = disev.decode_dialogue(source)
-                    character_id = struct.unpack_from("<H", body, end + 2)[0]
+                    city_id = struct.unpack_from("<H", body, end + 2)[0]
                     tokens.append({
-                        "kind": "대상 지정 대사", "raw": body[i : end + 4], "value": text,
-                        "character_id": character_id, "speaker_prefix": speaker_prefix,
+                        "kind": CITY_STRING_COMMAND_KIND, "raw": body[i : end + 4], "value": text,
+                        "character_id": city_id,
                         "editable": True, "flag": 0x20,
                     })
                     i = end + 4
@@ -4756,11 +5099,10 @@ class DisevEditor:
                 tokens.append({"kind": "EVSTILL 이미지 표시", "raw": body[i:i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
-            # 43 56 [상대 이동 u16]: 스톤헨지에서 확인된 특수 이벤트 분기.
-            # 판정 기준은 미확인이지만 일반 상대 이동 형식과 동일하다.
+            # 43 56 [상대 이동 u16]: 부관이 고용되어 있지 않으면 분기한다.
             if i + 4 <= len(body) and body[i:i + 2] == b"\x43\x56":
                 tokens.append({
-                    "kind": "특수 분기", "raw": body[i:i + 4], "value": None,
+                    "kind": "부관 미고용 조건", "raw": body[i:i + 4], "value": None,
                     "branch_opcode": 0x56, "editable": True,
                 })
                 i += 4
@@ -4951,17 +5293,18 @@ class DisevEditor:
                 i += 1
                 continue
             if body[i] == 0x4A:
-                tokens.append({"kind": "결과 참 설정", "raw": b"\x4A", "value": None, "editable": True})
+                tokens.append({"kind": "게임 오버", "raw": b"\x4A", "value": None, "editable": True})
                 i += 1
                 continue
-            # 31: 델포이 성지에서 주인공 성격을 판정·갱신한다.
+            # 31: 델포이 성지에서 성격·자녀·배우자·수명 신탁을 출력한다.
+            # 상태값이나 이벤트 참·거짓 결과는 변경하지 않는다.
             if body[i] == 0x31:
-                tokens.append({"kind": "주인공 성격 판정", "raw": b"\x31", "value": None, "editable": True})
+                tokens.append({"kind": "델포이 신탁 출력", "raw": b"\x31", "value": None, "editable": True})
                 i += 1
                 continue
-            # 19 1C [대상 u16] 1C [참조 상태값 u16]: 다른 상태값을 읽어 대상에 더한다.
-            # 아마조네스·여러 민족 이벤트에서 공통으로 쓰이며, 뒤의 1C는 상수나
-            # 무작위 수식이 아니라 런타임 상태값을 피연산자로 읽는 표식이다.
+            # 19 1C [대상 상태값 u16] 1C [참조 수치 종류 u16]: 참조 수치를 대상에 더한다.
+            # 두 번째 1C의 u16은 상태값 ID가 아니라 EXE의 범용 수치 피연산자 종류 코드다.
+            # 13h는 주인공 성격 첫 축(소심↔거만)을 읽는 것으로 확인됐다.
             if i + 7 <= len(body) and body[i : i + 2] == b"\x19\x1C" and body[i + 4] == 0x1C:
                 stat_id = struct.unpack_from("<H", body, i + 2)[0]
                 source_stat_id = struct.unpack_from("<H", body, i + 5)[0]
@@ -5032,13 +5375,29 @@ class DisevEditor:
             0x45: "결과 거짓 시 이동",
             0x47: "결과 참 시 이동",
             0x4B: "이전 조건 참 시 이동",
-            0x56: "특수 분기",
+            0x56: "부관 미고용 조건",
             0x6E: "STORY1.CDS 외 분기",
         }
         offset = 0
         for token in tokens:
             raw = bytes(token["raw"])
-            if token.get("kind") in (HINT_BRANCH_KIND, DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND, ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND, YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND, YEAR_RANGE_BRANCH_KIND, CITY_BRANCH_KIND, NPC_BRANCH_KIND, CHOICE_BRANCH_KIND, STATE_REFERENCE_COMPARE_BRANCH_KIND, RUNTIME_REFERENCE_BRANCH_KIND, "소지금 비교 분기") + NUMERIC_COMPARE_BRANCH_KINDS:
+            if token.get("kind") == "이벤트 내부 참조":
+                # 30 1D의 u16은 파트의 고정 4바이트 헤더 뒤를 기준으로 한다.
+                # 본문 시작점과의 차이를 빼야 편집기 본문 행 번호로 환산할 수 있다.
+                part_offset = struct.unpack_from("<H", raw, 2)[0]
+                target_offset = part_offset + 4 - body_part_offset
+                target_number = offsets.get(target_offset)
+                token["part_offset"] = part_offset
+                token["target_body_offset"] = target_offset
+                token["target_index"] = target_number
+                if target_number is not None:
+                    token["value"] = target_number
+                else:
+                    # 명령 경계 밖을 가리키는 원본값은 손대면 복구할 수 없으므로
+                    # 원시 오프셋을 보여 주되 편집은 막는다.
+                    token["value"] = part_offset
+                    token["editable"] = False
+            elif token.get("kind") in (HINT_BRANCH_KIND, DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND, ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND, YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND, YEAR_RANGE_BRANCH_KIND, CITY_BRANCH_KIND, NPC_BRANCH_KIND, CHOICE_BRANCH_KIND, STATE_REFERENCE_COMPARE_BRANCH_KIND, RUNTIME_REFERENCE_BRANCH_KIND, "소지금 비교 분기") + NUMERIC_COMPARE_BRANCH_KINDS:
                 relative_offset = 14 if token.get("kind") in RANDOM_STATE_COMPARE_BRANCH_KINDS else 10 if token.get("kind") in (ABILITY_COMPARE_BRANCH_KIND, ABILITY_COMPARE3_BRANCH_KIND, STATE_GREATER_BRANCH_KIND, STATE_LESS_BRANCH_KIND, STATE_LESS_OR_EQUAL_BRANCH_KIND, "소지금 비교 분기") else int(token.get("relative_offset", 9)) if token.get("kind") in (STATE_REFERENCE_COMPARE_BRANCH_KIND, STATE_SCALAR_COMPARE_BRANCH_KIND) else 8 if token.get("kind") == RUNTIME_REFERENCE_BRANCH_KIND else 8 if token.get("kind") == YEAR_RANGE_BRANCH_KIND else 4 if token.get("kind") == CHOICE_BRANCH_KIND else 5
                 target_offset = offset + len(raw) + struct.unpack_from("<H", raw, relative_offset)[0]
                 target_number = offsets.get(target_offset)
@@ -5069,20 +5428,52 @@ class DisevEditor:
             offset += len(raw)
         return tokens
 
-    def _shift_branch_targets_for_insert(self, insert_index: int) -> None:
-        """행 삽입 뒤에도 기존 분기가 같은 명령을 가리키도록 행 번호를 보정한다."""
+    def _shift_branch_targets_for_insert(self, insert_index: int, inserted_size: int = 0) -> None:
+        """행 삽입 뒤에도 기존 분기·내부 이동이 같은 명령을 가리키도록 보정한다."""
+        insert_offset = sum(len(bytes(token["raw"])) for token in self.body_tokens[:insert_index])
         for token in self.body_tokens:
             target = token.get("target_index")
             if isinstance(target, int) and target > insert_index:
                 token["target_index"] = target + 1
                 token["value"] = target + 1
+            elif (
+                inserted_size
+                and token.get("kind") == "이벤트 내부 참조"
+                and isinstance(token.get("target_body_offset"), int)
+                and token.get("target_index") is None
+                and int(token["target_body_offset"]) >= insert_offset
+            ):
+                # 일부 원본은 명령 경계가 아닌 내부 데이터 위치를 가리킨다.
+                # 이 경우에도 앞에 명령을 넣으면 같은 데이터 위치를 유지해야 한다.
+                target_offset = int(token["target_body_offset"]) + inserted_size
+                token["target_body_offset"] = target_offset
+                token["part_offset"] = target_offset + int(getattr(self, "body_part_offset", 4)) - 4
+                token["raw"] = b"\x30\x1D" + struct.pack("<H", int(token["part_offset"]))
+                token["value"] = token["part_offset"]
 
-    def _shift_branch_targets_for_remove(self, remove_index: int) -> None:
-        """목적지 행을 지우면 해당 분기를 적용 전에 오류로 막는다."""
+    def _shift_branch_targets_for_remove(self, remove_index: int, removed_size: int = 0) -> None:
+        """목적지 행을 지우면 해당 분기·내부 이동을 적용 전에 오류로 막는다."""
         removed_number = remove_index + 1
+        remove_offset = sum(len(bytes(token["raw"])) for token in self.body_tokens[:remove_index])
         for token in self.body_tokens:
             target = token.get("target_index")
             if not isinstance(target, int):
+                if (
+                    removed_size
+                    and token.get("kind") == "이벤트 내부 참조"
+                    and isinstance(token.get("target_body_offset"), int)
+                ):
+                    target_offset = int(token["target_body_offset"])
+                    if remove_offset <= target_offset < remove_offset + removed_size:
+                        token["target_body_offset"] = None
+                        token["part_offset"] = None
+                        token["value"] = None
+                    elif target_offset >= remove_offset + removed_size:
+                        target_offset -= removed_size
+                        token["target_body_offset"] = target_offset
+                        token["part_offset"] = target_offset + int(getattr(self, "body_part_offset", 4)) - 4
+                        token["raw"] = b"\x30\x1D" + struct.pack("<H", int(token["part_offset"]))
+                        token["value"] = token["part_offset"]
                 continue
             if target == removed_number:
                 token["target_index"] = None
@@ -5092,7 +5483,7 @@ class DisevEditor:
                 token["value"] = target - 1
 
     def _encode_body_tokens(self) -> bytes:
-        """행 번호 기반 분기를 현재 본문 길이에 맞는 상대 바이트값으로 다시 기록한다."""
+        """행 번호 기반 분기·내부 이동을 현재 본문 길이에 맞춰 다시 기록한다."""
         offsets: list[int] = []
         offset = 0
         for token in self.body_tokens:
@@ -5103,7 +5494,25 @@ class DisevEditor:
             raw = bytes(token["raw"])
             opcode = token.get("branch_opcode")
             prefix = token.get("branch_prefix")
-            if opcode is not None or isinstance(prefix, bytes):
+            if token.get("kind") == "이벤트 내부 참조":
+                target = token.get("target_index")
+                if isinstance(target, int):
+                    if not 1 <= target <= len(offsets):
+                        raise ValueError(f"{index + 1}번 내부 이동의 이동할 행을 지정하세요.")
+                    target_body_offset = offsets[target - 1]
+                else:
+                    target_body_offset = token.get("target_body_offset")
+                    if not isinstance(target_body_offset, int):
+                        raise ValueError(f"{index + 1}번 내부 이동의 목적지가 삭제되었습니다.")
+                part_offset = target_body_offset + int(getattr(self, "body_part_offset", 4)) - 4
+                if not 0 <= part_offset <= 65535:
+                    raise ValueError(f"{index + 1}번 내부 이동의 목적지가 파트 범위를 벗어났습니다.")
+                raw = b"\x30\x1D" + struct.pack("<H", part_offset)
+                token["raw"] = raw
+                token["part_offset"] = part_offset
+                token["target_body_offset"] = target_body_offset
+                token["value"] = target if isinstance(target, int) else part_offset
+            elif opcode is not None or isinstance(prefix, bytes):
                 target = token.get("target_index")
                 if not isinstance(target, int) or not 1 <= target <= len(offsets):
                     raise ValueError(f"{index + 1}번 분기의 이동할 행을 지정하세요.")
@@ -5147,16 +5556,6 @@ class DisevEditor:
                 # 본문 명령으로 처리하지 못할 수 있으므로 보존하면 안 된다.
                 # 선택지 플래그(0B/10)만 일반 대사로 해제한다.
                 old_flag = token.get("flag")
-                if kind == "대상 지정 대사":
-                    updated = self._new_body_token(
-                        kind, text, character_id=self._body_npc_id(),
-                        speaker_prefix=self._body_speaker_prefix(),
-                    )
-                    token.update(updated)
-                    self.pending = True
-                    self._refresh_body_list_selection()
-                    self.status_var.set(ui("status_body_updated"))
-                    return
                 flag = 0x0B if kind == "예/아니오 대사" else (old_flag if kind == "다중 선택지 대사" and old_flag in (0x10, 0x18) else 0x10 if kind == "다중 선택지 대사" else 0x00)
                 speaker_prefix = self._body_speaker_prefix()
                 suffix = b"\0" + bytes((int(token.get("choice_count", 0)),)) if kind == "다중 선택지 대사" else b"\0"
@@ -5165,6 +5564,10 @@ class DisevEditor:
                 token["speaker_prefix"] = speaker_prefix
                 token["flag"] = flag
                 token["kind"] = kind
+            elif kind == CITY_STRING_COMMAND_KIND:
+                token.update(self._new_body_token(
+                    kind, self.body_value_var.get(), character_id=self._body_city_id(),
+                ))
             elif kind in DISCOVERY_NAME_COMMAND_KINDS:
                 updated = self._new_body_token(
                     kind,
@@ -5186,7 +5589,7 @@ class DisevEditor:
             elif kind in STAT_REFERENCE_COMMAND_KINDS:
                 token.update(self._new_body_token(
                     kind, stat_id=self._body_stat_id(),
-                    compare_value=int(self.body_value_var.get().strip()),
+                    compare_value=self._body_source_stat_id(),
                 ))
             elif kind in ("아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리"):
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
@@ -5198,13 +5601,17 @@ class DisevEditor:
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
             elif kind == "해상 전투":
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
-            elif kind in ("인물 이벤트 실행", "인물 이벤트 실행 (보조)"):
-                token.update(self._new_body_token(kind, self._body_input_value(kind)))
+            elif kind in ("일기토 실행", "육상전 실행"):
+                token.update(self._new_body_token(
+                    kind, self._body_input_value(kind), battlefield=self.body_detail_var.get(),
+                ))
             elif kind in CHARACTER_TARGET_COMMAND_KINDS:
                 token.update(self._new_body_token(kind, self._body_input_value(kind), character_id=self._body_npc_id()))
+            elif kind in CITY_TARGET_COMMAND_KINDS:
+                token.update(self._new_body_token(kind, self._body_input_value(kind), character_id=self._body_city_id()))
             elif kind == "이벤트 내부 참조":
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
-            elif kind == "이벤트 분류 설정":
+            elif kind == "일기토 연출 세트 설정":
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
             elif kind == "이벤트 조건 판정":
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
@@ -5212,7 +5619,7 @@ class DisevEditor:
                 token.update(self._new_body_token(kind, self.special_check_value_var.get(), compare_value=self.special_difficulty_var.get()))
             elif kind in ("STORY0.CDS 외 분기", "STORY1.CDS 외 분기"):
                 token.update(self._new_body_token(kind, self.body_value_var.get()))
-            elif kind in ("결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "특수 분기", "소지금 비교 분기", RUNTIME_REFERENCE_BRANCH_KIND, CHOICE_BRANCH_KIND, HINT_BRANCH_KIND, DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND, ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND, YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND, YEAR_RANGE_BRANCH_KIND, CITY_BRANCH_KIND, NPC_BRANCH_KIND, STATE_REFERENCE_COMPARE_BRANCH_KIND) + NUMERIC_COMPARE_BRANCH_KINDS:
+            elif kind in ("결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "부관 미고용 조건", "소지금 비교 분기", RUNTIME_REFERENCE_BRANCH_KIND, CHOICE_BRANCH_KIND, HINT_BRANCH_KIND, DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND, ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND, YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND, YEAR_RANGE_BRANCH_KIND, CITY_BRANCH_KIND, NPC_BRANCH_KIND, STATE_REFERENCE_COMPARE_BRANCH_KIND) + NUMERIC_COMPARE_BRANCH_KINDS:
                 target_index = int(self.body_value_var.get().strip())
                 if not 1 <= target_index <= len(self.body_tokens):
                     raise ValueError(f"이동할 행은 1~{len(self.body_tokens)} 범위여야 합니다.")
@@ -5244,7 +5651,7 @@ class DisevEditor:
                     updated["branch_prefix"] = prefix
                     updated["relative_offset"] = 8
                 token.update(updated)
-            elif kind in ("이미지 표시 종료", "대화창 숨김", "대화창 표시", "결과 거짓 설정", "결과 참 설정", "주인공 성격 판정"):
+            elif kind in ("이미지 표시 종료", "대화창 숨김", "대화창 표시", "결과 거짓 설정", "게임 오버", "델포이 신탁 출력"):
                 token.update(self._new_body_token(kind))
             elif kind == "이벤트 결과 코드":
                 token.update(self._new_body_token(kind, str(self._body_result_code())))
@@ -5252,7 +5659,9 @@ class DisevEditor:
                 token.update(self._new_body_token(kind, self.body_value_var.get()))
             elif kind == "날짜 경과":
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
-            elif kind in ("소지금 증가", "소지금 감소", "이벤트 플래그 설정", "내부 상태 설정", "특수 상태 처리"):
+            elif kind == "국가 멸망 처리":
+                token.update(self._new_body_token(kind, self._body_input_value(kind)))
+            elif kind in ("소지금 증가", "소지금 감소", "이벤트 플래그 설정", "특수 상태 처리"):
                 token.update(self._new_body_token(kind, self.body_value_var.get()))
             else:
                 value = int(self.body_value_var.get().strip())
@@ -5301,6 +5710,11 @@ class DisevEditor:
         elif kind == "특수 수치 판정":
             group = "미니게임"
             subkind = MINIGAME_SUBKIND_BY_TYPE.get(int(token.get("difficulty", -1)), f"미확인 종류 ({token.get('difficulty', '?')})")
+        elif kind == "이벤트 조건 판정":
+            group = "조건 판정"
+            subkind = EVENT_CONDITION_SUBKIND_BY_CODE.get(
+                int(token.get("value", -1)), UNSUPPORTED_EVENT_CONDITION_SUBKIND,
+            )
         else:
             group, subkind = BODY_KIND_TO_GROUP.get(kind, (kind, ""))
         detail = BODY_KIND_TO_DETAIL.get(kind, "")
@@ -5309,12 +5723,28 @@ class DisevEditor:
         if kind in DIALOGUE_KINDS:
             prefix = bytes(token.get("speaker_prefix", b""))
             detail = next((name for name, value in self.dialogue_speakers.items() if value == prefix), "화자 미확인")
-            if kind == "대상 지정 대사":
-                character_id = int(token.get("character_id", -1))
-                fourth = next(
-                    (name for candidate_id, name in self.character_targets if candidate_id == character_id),
-                    f"인물 {character_id}",
+            conditional_note = CONDITIONAL_DIALOGUE_SPEAKER_NOTES.get(detail)
+            if conditional_note:
+                fourth = conditional_note
+        elif kind == CITY_STRING_COMMAND_KIND:
+            city_id = int(token.get("character_id", -1))
+            detail = next(
+                (name for candidate_id, name in self.city_targets if candidate_id == city_id),
+                f"도시 {city_id}",
+            )
+        elif kind in CITY_TARGET_COMMAND_KINDS:
+            city_id = int(token.get("character_id", -1))
+            detail = next(
+                (name for candidate_id, name in self.city_targets if candidate_id == city_id),
+                f"도시 {city_id}",
+            )
+            if kind == "도시 시설 제거":
+                facility_id = int(token.get("value", -1))
+                facility_name = next(
+                    (name for candidate_id, name in self.building_targets if candidate_id == facility_id),
+                    f"시설 {facility_id}",
                 )
+                fourth = facility_name
         elif kind in STAT_COMMAND_KINDS:
             detail = STAT_TARGET_NAMES.get(int(token.get("stat_id", -1)), "대상 미확인")
         elif kind == HINT_BRANCH_KIND:
@@ -5337,6 +5767,10 @@ class DisevEditor:
             # 이동할 행은 값 열에 남기고, 조건의 시작·종료 연도는 분류 열로 분리한다.
             detail = f"시작 {token.get('start_year', '-')}"
             fourth = f"종료 {token.get('end_year', '-')}"
+        elif kind == CHOICE_BRANCH_KIND:
+            # 선택값 자체는 조건 파라미터이므로 3차에만 표시한다. 분기 방향은
+            # 값 열의 "선택값 불일치 시 N번 행"으로 설명한다.
+            detail = f"선택값 {token.get('choice_value', '?')}"
         elif kind == NPC_BRANCH_KIND:
             npc_type = int(token.get("npc_type", 0x0D)); detail = "후원자" if npc_type == 0x12 else "인물"
             targets = self.sponsor_targets if npc_type == 0x12 else self.character_targets
@@ -5358,10 +5792,14 @@ class DisevEditor:
             fourth = f"{target_name} / {source_name}"
         elif kind in STAT_REFERENCE_COMMAND_KINDS:
             detail = STAT_TARGET_NAMES.get(int(token.get("stat_id", -1)), "대상 미확인")
+            source_id = int(token.get("source_stat_id", -1))
+            fourth = REFERENCE_OPERAND_SOURCE_NAMES.get(source_id, f"참조 수치 코드 {source_id}")
+        elif kind == "육상전 실행":
+            detail = str(token.get("battlefield", "현재 위치 지형 (자동)"))
         return str(group), str(subkind), str(detail), str(fourth), str(fifth)
 
     def _body_display_value(self, token: dict[str, object]) -> str:
-        """본문 목록에서는 참조 ID 대신 사람이 읽을 수 있는 이름을 보여 준다."""
+        """본문 목록의 값을 사람이 읽을 수 있는 형태로 표시한다."""
         value_text = token.get("value_text")
         if value_text is not None:
             return str(value_text)
@@ -5375,6 +5813,22 @@ class DisevEditor:
             return "-"
         if kind == "특수 수치 판정":
             return f"{value}개" if int(token.get("difficulty", -1)) == 5 else "-"
+        if kind in ("일기토 실행", "육상전 실행"):
+            return f"상대 {value}"
+        if kind == "일기토 연출 세트 설정":
+            return f"세트 {value}"
+        if kind == "이벤트 조건 판정":
+            return EVENT_CONDITION_RESULT_TEXT_BY_CODE.get(
+                int(value), f"35 1C 처리 없음 · 이전 판정 유지 (ID {value})",
+            )
+        if kind in CONDITIONAL_BRANCH_KINDS:
+            return branch_target_value_text(kind, value)
+        if kind == "도시 시설 제거":
+            city_id = int(token.get("character_id", -1))
+            return next(
+                (name for candidate_id, name in self.city_targets if candidate_id == city_id),
+                f"도시 {city_id}",
+            )
         target_sets: dict[str, list[tuple[int, str]]] = {
             "아이템 획득": self.item_targets,
             "아이템 상실": self.item_targets,
@@ -5385,12 +5839,12 @@ class DisevEditor:
             "힌트 획득": self.hint_targets,
             "인물 상태 처리 1": self.character_targets,
             "인물 상태 처리 2": self.character_targets,
-            "인물 상태 처리 3": self.character_targets,
-            "인물 참조 설정": self.character_targets,
-            "인물 상태 처리 4": self.character_targets,
-            "인물 상태 비트 해제": self.character_targets,
-            "인물 선택 판정": self.character_targets,
-            "인물 위치 판정": self.character_targets,
+            "도시 국적 변경": self.city_targets,
+            "도시 점령지 설정": self.city_targets,
+            "도시 점령지 해제": self.city_targets,
+            "도시 제거": self.city_targets,
+            "도시 상태 판정": self.city_targets,
+            "국가 멸망 처리": self.nation_targets,
         }
         for target_id, name in target_sets.get(kind, []):
             if target_id == value:
@@ -5398,7 +5852,10 @@ class DisevEditor:
         if kind == "이벤트 결과 코드":
             return EVENT_RESULT_NAMES.get(int(value), f"알 수 없는 결과 ({value})")
         if kind in STAT_REFERENCE_COMMAND_KINDS:
-            return STAT_TARGET_NAMES.get(int(value), f"상태값 ID {value}")
+            source_id = int(token.get("source_stat_id", value))
+            if source_id == 19:
+                return "0=소심 / 1=중립 / 2=거만 (실행 시 결정)"
+            return REFERENCE_OPERAND_SOURCE_NAMES.get(source_id, f"참조 수치 코드 {source_id}")
         return str(value)
 
     def _set_readonly(self, widget: tk.Text, value: str) -> None:

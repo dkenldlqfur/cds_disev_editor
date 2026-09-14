@@ -71,6 +71,15 @@ STAT_NAMES = {
     21: "지력",
     22: "매력",
     23: "신앙심",
+    27: "현재 후원자 계약 남은 기한(일)",
+    29: "STORY 의뢰 남은 기한(일)",
+}
+
+ABILITY_CHECK_NAMES = {
+    6: "무력 판정 (전용 연출)",
+    18: "운 판정 (동전 굴리기 연출)",
+    21: "지력 판정 (전용 연출)",
+    23: "신앙심 판정",
 }
 
 # Dialogue speaker tags are retained in the original Japanese CP932 even in
@@ -219,6 +228,9 @@ FORMS = (
     Form(b"\x2B\x1C", 9, "능력치 조건"),
     Form(b"\x2C\x1C", 9, "수치 비교 (미만)"),
     Form(b"\x2D\x1C", 9, "수치 비교 (이하)"),
+    # R(100) <= 상태값+1 결과를 현재 참/거짓 판정으로 저장한다.
+    # EXE가 처리하는 상태값 ID는 6·18·21·23뿐이다.
+    Form(b"\x35\x1C", 4, "능력치 확률 판정"),
     # Random(분모) < 성공값. 현재 DISEV에는 성공값이 모두 1인 1/N 확률 조건만 있다.
     Form(b"\x2E\x1A", 11, "무작위 확률 조건"),
     Form(b"\x37\x0D", 4, "인물 런타임 조건"),
@@ -240,14 +252,22 @@ FORMS = (
     Form(b"\x57\x05", 4, "아이템 상실"),
     # 전역 이벤트 플래그 배열의 해당 항목을 아직 0일 때 1로 설정한다.
     Form(b"\x01\x15", 4, "이벤트 플래그 설정"),
-    Form(b"\x26\x08", 4, "신도시 생성"),
-    Form(b"\x26\x10", 7, "특수 건물 생성"),
+    Form(b"\x22\x08", 4, "도시 제거"),
+    Form(b"\x23\x08", 4, "도시 점령지 설정"),
+    Form(b"\x25\x08", 4, "도시 점령지 해제"),
+    Form(b"\x26\x08", 4, "도시 생성/활성화"),
+    Form(b"\x22\x10", 7, "도시 시설 제거"),
+    Form(b"\x26\x10", 7, "도시 시설 설정"),
     Form(b"\x06\x4D", 2, "다음 단계"),
     Form(b"\x04\x4D", 2, "이벤트 완전 종료"),
     Form(b"\x06\xFF", 1, "다음 단계"),
     Form(b"\x0E\x03", 4, "음원 재생"),
+    # 델포이 성지에서 성격·자녀 적성·배우자·수명 신탁을 출력한다.
+    # 상태값이나 현재 이벤트의 참·거짓 결과는 변경하지 않는다.
+    Form(b"\x31", 1, "델포이 신탁 출력"),
     Form(b"\x5A", 1, "후원자 계약 없음 조건"),
     Form(b"\x50", 1, "OR 연결(추정)"),
+    Form(b"\x4A", 1, "게임 오버"),
     Form(b"\x4C", 1, "이벤트 결과 코드 0"),
     Form(b"\x4D", 1, "이벤트 결과 코드 1"),
     Form(b"\x4E", 1, "이벤트 결과 코드 2"),
@@ -520,6 +540,13 @@ def describe_form(form: Form, raw: bytes, absolute_offset: int) -> str:
             "수치 비교 (미만)": "<",
         }[kind]
         return f"조건: {STAT_NAMES.get(stat, f'필드 {stat}')} {operator} {value}"
+    if kind == "능력치 확률 판정":
+        stat = read_u16(raw, 2)
+        name = ABILITY_CHECK_NAMES.get(stat)
+        if name is None:
+            return f"미지원 판정 ID {stat}: 35 1C 처리 없음, 이전 판정 결과 유지"
+        stat_name = STAT_NAMES[stat]
+        return f"{name}: R(100) <= {stat_name}+1 -> 참/거짓"
     if kind in ("능력치 증가", "능력치 감소", "능력치/기한 설정", "능력치 설정"):
         stat = read_u16(raw, 2)
         if raw[4] == 0x20 and len(raw) >= 13:
@@ -538,10 +565,10 @@ def describe_form(form: Form, raw: bytes, absolute_offset: int) -> str:
         return f"{kind}: 아이템 ID {read_u16(raw, 2)}"
     if kind in ("힌트 상태 활성 조건", "힌트 상태 미활성 조건"):
         return f"{kind}: 힌트 상태 ID {read_u16(raw, 2)}"
-    if kind == "신도시 생성":
-        return f"신도시 생성: 도시 ID {read_u16(raw, 2)}"
-    if kind == "특수 건물 생성":
-        return f"특수 건물 생성: 건물 {read_u16(raw, 2)}, 도시 {read_u16(raw, 5)}"
+    if kind in ("도시 제거", "도시 점령지 설정", "도시 점령지 해제", "도시 생성/활성화"):
+        return f"{kind}: 도시 ID {read_u16(raw, 2)}"
+    if kind in ("도시 시설 제거", "도시 시설 설정"):
+        return f"{kind}: 시설 비트 {read_u16(raw, 2)}, 도시 ID {read_u16(raw, 5)}"
     if form.jump_offset >= 0 and form.jump_offset + 2 <= len(raw):
         relative = read_u16(raw, form.jump_offset)
         target = absolute_offset + form.length + relative
