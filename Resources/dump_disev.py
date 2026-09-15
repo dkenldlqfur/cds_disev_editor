@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import struct
+import sys
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
@@ -63,14 +65,20 @@ STAT_NAMES = {
     6: "무력",
     7: "체력",
     8: "생명력",
-    10: "동승 인물 체력",
-    11: "동승 인물 생명력",
+    9: "부관 성격: 소심↔거만",
+    10: "부관 체력",
+    11: "부관 생명력",
+    12: "부관 사격술",
+    13: "부관 무력",
+    14: "부관 역사학",
     17: "명성",
     18: "운",
     20: "현재 함선 내구도",
     21: "지력",
     22: "매력",
     23: "신앙심",
+    24: "부관 지력",
+    26: "주인공 국적 경로 (0=포르투갈, 1=에스파니아)",
     27: "현재 후원자 계약 남은 기한(일)",
     29: "STORY 의뢰 남은 기한(일)",
 }
@@ -191,24 +199,31 @@ class Form:
 FORMS = (
     # 00은 본문 하위 명령 그룹이다. 00 02 [u16]는 EXE의 AVI 재생 핸들러로
     # 들어간다. 이를 먼저 잡지 않으면 뒤의 02 0A 00을 빈 대사로 오인한다.
+    Form(b"\x00\x01", 4, "DSTILL 이미지 표시"),
     Form(b"\x00\x02", 4, "AVI 재생"),
+    Form(b"\x00\x0C", 4, "CG 애니메이션 재생"),
     Form(b"\x00\x1F", 4, "EVSTILL 이미지 표시"),
+    Form(b"\x01\x0B", 4, "발견물 등록/발견 처리"),
     Form(b"\x43\x2C\x08", 15, "교역품 조건 분기", 13),
     Form(b"\x43\x2D\x1C", 12, "능력치 비교 분기", 10),
     Form(b"\x43\x2E\x1C", 12, "능력치 비교2 분기", 10),
     Form(b"\x43\x2B\x1C", 12, "능력치 비교3 분기", 10),
     Form(b"\x43\x2C\x1C", 12, "소지금 비교 분기", 10),
-    Form(b"\x43\x12\x05", 7, "아이템 조건 분기", 5),
+    Form(b"\x43\x12\x05", 7, "아이템 소지 조건 분기", 5),
+    Form(b"\x43\x0F\x05", 7, "아이템 미소지 조건 분기", 5),
     Form(b"\x43\x3A\x0B", 7, "발견물 조건 분기", 5),
-    Form(b"\x43\x0F\x0E", 7, "미확인 0F0E 분기", 5),
-    Form(b"\x43\x00\x15", 6, "미확인 0015 분기", 4),
+    Form(b"\x43\x0F\x0E", 7, "힌트 비활성 시 이동", 5),
+    Form(b"\x43\x12\x0E", 7, "힌트 활성 시 이동", 5),
+    # 국가와 도시를 런타임 객체로 해석해 도시의 현재 소속 국가를 비교한다.
+    # 43 공통 분기부는 이 비교가 참일 때 상대 이동량만큼 건너뛴다.
+    Form(b"\x43\x28\x00", 10, "도시 국적 일치 조건 분기", 8),
     Form(b"\x43\x11", 6, "선택지 분기", 4),
     # 43 45는 퀘스트 스크립트 도구에서도 표준 점프(JUMP)로 생성된다.
     # 43 47은 바로 앞 0B(예/아니오) 대화의 응답을 받는 분기다.
-    # 43 4B의 판정 기준은 아직 EXE에서 확정하지 못했다.
+    # 43 4B는 바로 앞에서 계산된 조건 결과가 참일 때 분기한다.
     Form(b"\x43\x45", 4, "이동", 2),
     Form(b"\x43\x47", 4, "예/아니오 응답 분기", 2),
-    Form(b"\x43\x4B", 4, "미확인 4B 분기", 2),
+    Form(b"\x43\x4B", 4, "이전 조건 참 분기", 2),
     # 6D는 런타임의 현재 시나리오 파일명과 `C:STORY0.CDS`를 비교한다.
     Form(b"\x43\x6D", 4, "STORY0.CDS 외 분기", 2),
     # 6E는 런타임의 현재 시나리오 파일명(0x62989C)과 `C:STORY1.CDS`를
@@ -220,7 +235,7 @@ FORMS = (
     Form(b"\x17\x19", 4, "문화권 조건"),
     Form(b"\x1B\x16", 4, "연도 조건"),
     Form(b"\x1B\x17", 6, "연월 조건"),
-    Form(b"\x1C\x16", 4, "연도 상한 조건"),
+    Form(b"\x1C\x16", 4, "현재 연도 일치 조건"),
     Form(b"\x36\x16", 7, "연도 범위 조건"),
     Form(b"\x1B\x0B", 4, "발견 완료 조건"),
     Form(b"\x5E\x0B", 4, "미발견 조건"),
@@ -233,8 +248,8 @@ FORMS = (
     Form(b"\x35\x1C", 4, "능력치 확률 판정"),
     # Random(분모) < 성공값. 현재 DISEV에는 성공값이 모두 1인 1/N 확률 조건만 있다.
     Form(b"\x2E\x1A", 11, "무작위 확률 조건"),
-    Form(b"\x37\x0D", 4, "인물 런타임 조건"),
-    Form(b"\x37\x12", 4, "후원자 런타임 조건"),
+    Form(b"\x37\x0D", 4, "인물 이벤트 활성 조건"),
+    Form(b"\x37\x12", 4, "후원자 활성 조건"),
     # 상태값 수식은 `1A`(상수 u32, 9바이트) 또는 `20`(무작위 폭 u32 +
     # 시작값 u32, 13바이트)로 끝난다. parse_commands가 뒤의 수식 종류에
     # 맞춰 9/13바이트를 결정한다.
@@ -244,33 +259,38 @@ FORMS = (
     Form(b"\x22\x1C", 9, "능력치 설정"),
     Form(b"\x19\x14", 6, "금화 증가"),
     Form(b"\x1A\x14", 6, "금화 감소"),
-    Form(b"\x12\x05", 4, "아이템 소지 조건"),
-    Form(b"\x0F\x05", 4, "아이템 비소지 조건"),
+    # 값에 20을 곱한 뒤 50ms 타이머 틱으로 기다리므로 값 1은 정확히 1초다.
+    Form(b"\x29\x1A", 6, "대기"),
+    # 코인 게임(종류 4)은 앞의 u32를 읽기만 하며, 발라몬의 탑(종류 5)은
+    # 앞의 u32를 원반 수로 실행 함수에 전달한다.
+    Form(b"\x0E\x14", 9, "수치 인수 미니게임"),
+    Form(b"\x0E\x04", 4, "미니게임"),
+    Form(b"\x0F\x05", 4, "아이템 소지 조건"),
+    Form(b"\x12\x05", 4, "아이템 비소지 조건"),
     Form(b"\x0F\x0E", 4, "힌트 상태 활성 조건"),
     Form(b"\x12\x0E", 4, "힌트 상태 미활성 조건"),
     Form(b"\x00\x05", 4, "아이템 획득"),
-    Form(b"\x57\x05", 4, "아이템 상실"),
-    # 전역 이벤트 플래그 배열의 해당 항목을 아직 0일 때 1로 설정한다.
-    Form(b"\x01\x15", 4, "이벤트 플래그 설정"),
+    Form(b"\x57\x05", 4, "소지품 제거"),
+    # 해당 교역품의 발견·활성 상태가 0일 때 1로 설정해 특산품 판매를 해금한다.
+    Form(b"\x01\x15", 4, "교역품 활성화"),
     Form(b"\x22\x08", 4, "도시 제거"),
     Form(b"\x23\x08", 4, "도시 점령지 설정"),
     Form(b"\x25\x08", 4, "도시 점령지 해제"),
     Form(b"\x26\x08", 4, "도시 생성/활성화"),
     Form(b"\x22\x10", 7, "도시 시설 제거"),
     Form(b"\x26\x10", 7, "도시 시설 설정"),
-    Form(b"\x06\x4D", 2, "다음 단계"),
-    Form(b"\x04\x4D", 2, "이벤트 완전 종료"),
-    Form(b"\x06\xFF", 1, "다음 단계"),
+    Form(b"\x3C\x08", 4, "이벤트 대상 도시 이동"),
     Form(b"\x0E\x03", 4, "음원 재생"),
     # 델포이 성지에서 성격·자녀 적성·배우자·수명 신탁을 출력한다.
     # 상태값이나 현재 이벤트의 참·거짓 결과는 변경하지 않는다.
     Form(b"\x31", 1, "델포이 신탁 출력"),
     Form(b"\x5A", 1, "후원자 계약 없음 조건"),
-    Form(b"\x50", 1, "OR 연결(추정)"),
+    Form(b"\x50", 1, "OR 연결"),
+    Form(b"\x0D\x0D", 4, "해상 전투"),
     Form(b"\x4A", 1, "게임 오버"),
-    Form(b"\x4C", 1, "이벤트 결과 코드 0"),
-    Form(b"\x4D", 1, "이벤트 결과 코드 1"),
-    Form(b"\x4E", 1, "이벤트 결과 코드 2"),
+    Form(b"\x4C", 1, "완료 처리(코드 0) 후 해석 종료"),
+    Form(b"\x4D", 1, "실패 처리(코드 1) 후 해석 종료"),
+    Form(b"\x4E", 1, "미처리(코드 2) 후 해석 종료"),
 )
 
 
@@ -441,11 +461,21 @@ def decode_dialogue(data: bytes) -> tuple[str | None, str]:
             i += 2
             continue
         if i + 4 <= len(source) and source[i : i + 3] == b"\x81\x93\x82":
-            # ％ｓ is replaced by the player name at runtime. 이름 지정
-            # 이벤트의 ％Ｗ/％Ｘ/％Ｍ은 각각 "협", "대륙",
-            # "남방대륙"으로 전개된다. 나머지 자리표만 명시 토큰으로 남긴다.
+            # 전각 자리표는 한국어판 문자열 포매터(0x40C410)가 처리한다.
+            # 이름과 조사는 읽기 쉬운 설명으로 풀고, 이름 지정 전용 상수도
+            # 실제 전개 문자열로 표시한다.
             if source[i + 3] == 0x93:
                 cooked.extend("제독".encode("cp949"))
+            elif source[i + 3] == 0x67:
+                cooked.extend("은/는".encode("cp949"))
+            elif source[i + 3] == 0x73:
+                cooked.extend("와/과".encode("cp949"))
+            elif source[i + 3] == 0x66:
+                cooked.extend("이/가".encode("cp949"))
+            elif source[i + 3] == 0x78:
+                cooked.extend("이라는/라는".encode("cp949"))
+            elif source[i + 3] == 0x63:
+                cooked.extend("(이)".encode("cp949"))
             elif source[i + 3] == 0x76:
                 cooked.extend("협".encode("cp949"))
             elif source[i + 3] == 0x77:
@@ -495,7 +525,7 @@ def form_at(data: bytes, offset: int, end: int) -> Form | None:
 def likely_command_start(data: bytes, offset: int, end: int) -> bool:
     if offset >= end:
         return False
-    if data[offset] in (0xFF, 0x0A, 0x01, 0x02, 0x0C):
+    if data[offset] in (0xFF, 0x0A):
         return True
     if offset + 1 < end and data[offset + 1] == 0x0A:
         return True
@@ -504,10 +534,10 @@ def likely_command_start(data: bytes, offset: int, end: int) -> bool:
 
 def describe_form(form: Form, raw: bytes, absolute_offset: int) -> str:
     kind = form.kind
-    if kind == "AVI 재생":
-        return f"AVI 재생: 슬롯 {read_u16(raw, 2)}"
-    if kind == "EVSTILL 이미지 표시":
-        return f"EVSTILL 이미지 표시: 슬롯 {read_u16(raw, 2)}"
+    if kind in ("DSTILL 이미지 표시", "AVI 재생", "CG 애니메이션 재생", "EVSTILL 이미지 표시"):
+        return f"{kind}: 슬롯 {read_u16(raw, 2)}"
+    if kind == "발견물 등록/발견 처리":
+        return f"발견물 등록/발견 처리: ID {read_u16(raw, 2)}"
     if kind == "음원 재생":
         return f"음원 재생: 슬롯 {read_u16(raw, 2)}"
     if kind.endswith("조건") and len(raw) == 4 and raw[:1] == b"\x17":
@@ -516,8 +546,8 @@ def describe_form(form: Form, raw: bytes, absolute_offset: int) -> str:
         return f"연도 >= {read_u16(raw, 2)}"
     if kind == "연월 조건":
         return f"연월 조건: {read_u16(raw, 4)}년 {raw[2]}월"
-    if kind == "연도 상한 조건":
-        return f"연도 <= {read_u16(raw, 2)}"
+    if kind == "현재 연도 일치 조건":
+        return f"현재 연도 == {read_u16(raw, 2)}"
     if kind == "연도 범위 조건":
         return f"연도 범위: {read_u16(raw, 2)}~{read_u16(raw, 5)}"
     if kind == "무작위 확률 조건":
@@ -526,7 +556,7 @@ def describe_form(form: Form, raw: bytes, absolute_offset: int) -> str:
         if raw[6] != 0x1A:
             return "무작위 확률 조건: 피연산자 형식 미확인"
         return f"무작위 확률 조건: {success_count} / {denominator}"
-    if kind in ("인물 런타임 조건", "후원자 런타임 조건"):
+    if kind in ("인물 이벤트 활성 조건", "후원자 활성 조건"):
         return f"{kind}: 번호 {read_u16(raw, 2)}"
     if kind in ("발견 완료 조건", "미발견 조건"):
         return f"{kind}: 발견물 ID {read_u16(raw, 2)}"
@@ -561,20 +591,47 @@ def describe_form(form: Form, raw: bytes, absolute_offset: int) -> str:
     if kind in ("금화 증가", "금화 감소"):
         symbol = "+" if kind == "금화 증가" else "-"
         return f"금화 {symbol}{read_u32(raw, 2)}"
-    if kind in ("아이템 소지 조건", "아이템 비소지 조건", "아이템 획득", "아이템 상실"):
+    if kind in ("아이템 소지 조건", "아이템 비소지 조건", "아이템 획득", "소지품 제거"):
         return f"{kind}: 아이템 ID {read_u16(raw, 2)}"
     if kind in ("힌트 상태 활성 조건", "힌트 상태 미활성 조건"):
         return f"{kind}: 힌트 상태 ID {read_u16(raw, 2)}"
+    if kind == "해상 전투":
+        return f"해상 전투: 상대 ID {read_u16(raw, 2)}"
+    if kind == "대기":
+        return f"대기: {read_u32(raw, 2)}초"
+    if kind == "수치 인수 미니게임":
+        value = read_u32(raw, 2)
+        game_type = read_u16(raw, 7)
+        if raw[6] != 0x04:
+            return f"수치 인수 미니게임: 피연산자 형식 미확인 ({hex_bytes(raw)})"
+        if game_type == 4:
+            return f"코인 게임: 앞의 값 {value}는 실행 함수에 전달되지 않음"
+        if game_type == 5:
+            return f"발라몬의 탑 퍼즐: 원반 {value}개"
+        return f"수치 인수 미니게임: 종류 {game_type}, 값 {value} (현재 파일 밖 형식)"
+    if kind == "미니게임":
+        game_type = read_u16(raw, 2)
+        names = {
+            0: "성배 퍼즐", 1: "스핑크스 퀴즈", 2: "미궁 64 퍼즐",
+            3: "낚시 게임", 6: "화살표 입방체 퍼즐",
+        }
+        return f"미니게임: {names.get(game_type, f'종류 {game_type}')}"
     if kind in ("도시 제거", "도시 점령지 설정", "도시 점령지 해제", "도시 생성/활성화"):
         return f"{kind}: 도시 ID {read_u16(raw, 2)}"
+    if kind == "이벤트 대상 도시 이동":
+        return f"이벤트 대상 도시 이동: 도시 ID {read_u16(raw, 2)}"
     if kind in ("도시 시설 제거", "도시 시설 설정"):
         return f"{kind}: 시설 비트 {read_u16(raw, 2)}, 도시 ID {read_u16(raw, 5)}"
     if form.jump_offset >= 0 and form.jump_offset + 2 <= len(raw):
         relative = read_u16(raw, form.jump_offset)
         target = absolute_offset + form.length + relative
         extra = ""
-        if kind == "아이템 조건 분기":
+        if kind in ("아이템 소지 조건 분기", "아이템 미소지 조건 분기"):
             extra = f", 아이템 ID {read_u16(raw, 3)}"
+        elif kind in ("힌트 상태 활성 조건 분기", "힌트 상태 미활성 조건 분기"):
+            extra = f", 힌트 ID {read_u16(raw, 3)}"
+        elif kind == "도시 국적 일치 조건 분기":
+            extra = f", 국가 ID {read_u16(raw, 3)}, 도시 ID {read_u16(raw, 6)}"
         elif kind == "교역품 조건 분기":
             extra = (
                 f", 원산 도시 {read_u16(raw, 3)}, 교역품 {read_u16(raw, 6)}, "
@@ -607,6 +664,24 @@ def parse_commands(
             i += 1
             continue
 
+        # 20 0A [문자열] 00 08 [도시 u16]은 일반 대사가 아니라 현재 날짜와
+        # 도시 키를 붙여 소문·기록 링 버퍼에 저장하는 명령이다. 대사 판별보다
+        # 먼저 처리하지 않으면 0x20을 대화창 플래그로 오인한다.
+        if i + 6 <= end and data[i : i + 2] == b"\x20\x0A":
+            terminator = data.find(b"\0", i + 2, end)
+            if terminator >= 0 and terminator + 4 <= end and data[terminator + 1] == 0x08:
+                raw = data[i : terminator + 4]
+                city_id = read_u16(data, terminator + 2)
+                message = normalize_dialogue_display(safe_text(data[i + 2 : terminator]))
+                offset_prefix = f"    +0x{i:04X}  " if include_offsets else "    "
+                prefix = f"{offset_prefix}{hex_bytes(raw[:18]):<53} " if include_hex else offset_prefix
+                lines.append(f'{prefix}도시 소문 등록: 도시 ID {city_id}, "{message}"')
+                if include_hex and len(raw) > 18:
+                    lines.append(f"             ... 도시 소문 명령 전체 {len(raw)}바이트")
+                command_counts["도시 소문 등록"] += 1
+                i = terminator + 4
+                continue
+
         # Dialogue is either 0A text 00, or <window flag> 0A text 00.
         form = None if data[i] == 0x0A else form_at(data, i, end)
         if data[i] == 0x0A or (not form and i + 1 < end and data[i + 1] == 0x0A):
@@ -633,35 +708,6 @@ def parse_commands(
                 lines.append(f"             ... 대사 명령 전체 {len(raw)}바이트")
             command_counts["대사"] += 1
             i = next_i
-            continue
-
-        # 01/02/0C <u16> are DISEV media calls.  01 0B <u16> is also the
-        # discovery-register command, so slot 11 is resolved using the linked
-        # EXE row when possible and otherwise left explicitly ambiguous.
-        if i + 3 <= end and data[i] in (0x01, 0x02, 0x0C):
-            opcode = data[i]
-            value = read_u16(data, i + 1)
-            if opcode == 0x01 and data[i + 1] == 0x0B:
-                if row is not None and row.still == 11 and value == 11:
-                    label = "DSTILL 정지 이미지 재생: 슬롯 11 (EXE 매핑으로 판별)"
-                    length = 3
-                elif i + 4 <= end:
-                    discovery_id = read_u16(data, i + 2)
-                    label = f"발견물 등록/발견 처리: ID {discovery_id}"
-                    length = 4
-                else:
-                    label = "01 0B: 정지 이미지 11/발견 처리 경계 불명"
-                    length = 3
-            else:
-                media_name = {0x01: "DSTILL 이미지", 0x02: "AVI", 0x0C: "CG 애니메이션"}[opcode]
-                label = f"{media_name} 재생: 슬롯 {value}"
-                length = 3
-            raw = data[i : i + length]
-            offset_prefix = f"    +0x{i:04X}  " if include_offsets else "    "
-            prefix = f"{offset_prefix}{hex_bytes(raw):<53} " if include_hex else offset_prefix
-            lines.append(f"{prefix}{label}")
-            command_counts[label.split(":", 1)[0]] += 1
-            i += length
             continue
 
         form = form_at(data, i, end)
@@ -697,6 +743,99 @@ def parse_commands(
         unknown_counts[key] += 1
         command_counts["미확인 명령/데이터"] += 1
         i = j
+    return lines
+
+
+_EDITOR_PARSER = None
+
+
+def load_editor_parser():
+    """Load the editor's canonical parser so TXT annotations cannot drift."""
+    global _EDITOR_PARSER
+    if _EDITOR_PARSER is not None:
+        return _EDITOR_PARSER
+    editor_path = Path(__file__).resolve().parents[1] / "DISEV_Editor.pyw"
+    project_path = str(editor_path.parent)
+    if project_path not in sys.path:
+        sys.path.insert(0, project_path)
+    spec = importlib.util.spec_from_file_location("_disev_editor_dump_parser", editor_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"편집기 파서를 불러올 수 없습니다: {editor_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _EDITOR_PARSER = module
+    return module
+
+
+def parse_canonical_chunk(
+    data: bytes,
+    start: int,
+    end: int,
+    *,
+    condition: bool,
+    command_counts: Counter[str],
+    unknown_counts: Counter[str],
+) -> list[str]:
+    """Annotate one chunk with the exact same token boundaries as the editor."""
+    editor = load_editor_parser()
+    chunk = data[start:end]
+    if condition:
+        parser_owner = object.__new__(editor.DisevEditor)
+        decoded = editor.DisevEditor._decode_condition_tokens(parser_owner, chunk)
+        if decoded is None:
+            return parse_commands(data, start, end, None, command_counts, unknown_counts)
+        tokens: list[dict[str, object]] = []
+        for kind, values in decoded:
+            raw = editor.CONDITION_KINDS[kind][1](values)
+            tokens.append({"kind": kind, "raw": raw, "values": values})
+        consumed = sum(len(bytes(token["raw"])) for token in tokens)
+        if consumed < len(chunk) and chunk[consumed] == 0xFF:
+            tokens.append({"kind": "덩이/갈래 끝", "raw": b"\xFF"})
+    else:
+        tokens = editor.DisevEditor._decode_body_tokens(chunk, body_part_offset=start)
+
+    lines: list[str] = []
+    offset = start
+    detail_keys = (
+        "value", "values", "stat_id", "compare_value", "source_stat_id",
+        "character_id", "item_id", "hint_id", "choice_value", "difficulty",
+        "battlefield", "target_index", "part_offset",
+    )
+    for token in tokens:
+        raw = bytes(token["raw"])
+        kind = str(token["kind"])
+        display_kind = kind
+        if not condition:
+            group, subkind = editor.BODY_KIND_TO_GROUP.get(kind, (kind, ""))
+            detail = editor.BODY_KIND_TO_DETAIL.get(kind, "")
+            display_kind = " | ".join(value for value in (group, subkind, detail) if value)
+        details: list[str] = []
+        for key in detail_keys:
+            value = token.get(key)
+            if value is None or isinstance(value, bytes):
+                continue
+            if key == "value" and isinstance(value, str):
+                details.append(f'문자열 "{value}"')
+            else:
+                details.append(f"{key}={value}")
+        speaker_prefix = token.get("speaker_prefix")
+        if isinstance(speaker_prefix, bytes) and speaker_prefix.endswith(b"\x81\x46"):
+            tag = speaker_prefix[:-2].decode("cp932", errors="replace")
+            details.append(f"화자={tag}")
+        description = display_kind + (": " + ", ".join(details) if details else "")
+        prefix = f"    +0x{offset:04X}  {hex_bytes(raw[:18]):<53} "
+        lines.append(prefix + description)
+        if len(raw) > 18:
+            lines.append(f"             ... 명령 전체 {len(raw)}바이트")
+        command_counts[kind] += 1
+        if kind == "미확인 명령/데이터":
+            unknown_counts[hex_bytes(raw)] += 1
+        offset += len(raw)
+    if offset != end:
+        raw = data[offset:end]
+        lines.append(f"    +0x{offset:04X}  {hex_bytes(raw):<53} 미확인 명령/데이터")
+        command_counts["미확인 명령/데이터"] += 1
+        unknown_counts[hex_bytes(raw)] += 1
     return lines
 
 
@@ -784,14 +923,13 @@ def build_dump(disev_path: Path, exe_path: Path) -> str:
     add("- 대사: [창 플래그] 0A [CP949 문자열] 00")
     add("")
     add("3. 확인된 주요 명령")
-    add("- 01 [u16]: DSTILL 이미지 재생")
-    add("- 02 [u16]: AVI 재생")
-    add("- 0C [u16]: CG 애니메이션 재생")
+    add("- 00 01 [u16]: DSTILL 이미지 재생")
+    add("- 00 02 [u16]: AVI 재생")
+    add("- 00 0C [u16]: CG 애니메이션 재생")
     add("- 01 0B [발견물 ID u16]: 발견물 등록/발견 처리")
-    add("- 0A [CP949] 00: 대사")
-    add("- 4C FF: 이벤트 종료")
-    add("- 4E FF: 이벤트 미종료/반복")
-    add("- 그 밖의 조건·분기·아이템·금화 명령은 각 파트 주석 참조")
+    add("- 00 0A [CP949] 00: 일반 대사")
+    add("- 4C / 4D / 4E: 완료 처리(0) / 실패 처리(1) / 미처리(2) 후 현재 해석 종료")
+    add("- 각 파트 주석은 편집기와 동일한 정규 파서를 사용하므로 명령 경계와 이름이 일치")
     add("")
     add("4. 전체 파트")
 
@@ -833,16 +971,14 @@ def build_dump(disev_path: Path, exe_path: Path) -> str:
                     f"  [{label} 슬롯 {slot_index}] +0x{start:04X}~+0x{end - 1:04X} "
                     f"({end - start}바이트)"
                 )
-                out.extend(
-                    parse_commands(
-                        part,
-                        start,
-                        semantic_end,
-                        row,
-                        command_counts,
-                        unknown_counts,
-                    )
-                )
+                out.extend(parse_canonical_chunk(
+                    part,
+                    start,
+                    semantic_end,
+                    condition=label == "조건",
+                    command_counts=command_counts,
+                    unknown_counts=unknown_counts,
+                ))
                 if semantic_end < end:
                     padding = part[semantic_end:end]
                     add(
