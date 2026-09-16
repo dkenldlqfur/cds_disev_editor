@@ -1,7 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
 import json
-from PyInstaller.utils.hooks import collect_data_files
 
 _project_root = os.path.abspath(SPECPATH)
 with open(os.path.join(_project_root, 'Resources', 'data', 'app_config.json'), encoding='utf-8') as _config_file:
@@ -11,8 +10,8 @@ a = Analysis(
     [os.path.join(_project_root, 'DISEV_Editor.pyw')],
     pathex=[_project_root],
     binaries=[],
-    datas=[(os.path.join(_project_root, 'Resources'), 'Resources'), *collect_data_files('imageio_ffmpeg')],
-    hiddenimports=['imageio_ffmpeg'],
+    datas=[(os.path.join(_project_root, 'Resources'), 'Resources')],
+    hiddenimports=['vlc'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

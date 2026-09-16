@@ -31,10 +31,8 @@ from urllib.request import Request, urlopen
 
 from PIL import Image, ImageTk
 
-try:
-    import imageio_ffmpeg
-except ImportError:  # 개발 환경에서 의존성이 빠졌을 때는 AVI 미리보기만 비활성화한다.
-    imageio_ffmpeg = None
+# 번들 VLC DLL 경로를 먼저 설정해야 하므로 AVI 미리보기 시점에 지연 로드한다.
+vlc = None
 
 from Resources import dump_disev as disev
 from Resources.discovery_records import parse_pe_sections, va_to_file_offset
@@ -1038,6 +1036,14 @@ class DisevEditor:
         self._media_preview_frame_interval_ms = 80
         self._media_preview_loop = True
         self._media_preview_after: str | None = None
+        self._avi_vlc_instance = None
+        self._avi_vlc_player = None
+        self._avi_vlc_dll_directory = None
+        self._avi_vlc_buffer = None
+        self._avi_vlc_lock_callback = None
+        self._avi_vlc_display_callback = None
+        self._avi_vlc_frame_ready = False
+        self._avi_vlc_source: str | None = None
         self.body_media_preview_button: ttk.Button | None = None
         self.body_media_combo: ttk.Combobox | None = None
         self.body_battlefield_preview_button: ttk.Button | None = None
@@ -4658,34 +4664,147 @@ class DisevEditor:
         except tk.TclError:
             self._close_media_preview()
 
+    def _vlc_runtime_directory(self) -> Path:
+        """번들된 경량 VLC 런타임의 위치를 반환한다."""
+        runtime_directory = _resource_data_dir().parent / "vlc"
+        if not (runtime_directory / "libvlc.dll").is_file():
+            raise FileNotFoundError(
+                f"AVI 미리보기에 필요한 VLC 런타임을 찾을 수 없습니다.\n{runtime_directory}"
+            )
+        return runtime_directory
+
+    def _load_vlc(self):
+        """DLL 검색 경로를 먼저 설정한 뒤 python-vlc를 지연 로드한다."""
+        global vlc
+        runtime_directory = self._vlc_runtime_directory()
+        if self._avi_vlc_dll_directory is None and hasattr(os, "add_dll_directory"):
+            self._avi_vlc_dll_directory = os.add_dll_directory(str(runtime_directory))
+        os.environ["VLC_PLUGIN_PATH"] = str(runtime_directory / "plugins")
+        os.environ["PYTHON_VLC_LIB_PATH"] = str(runtime_directory / "libvlc.dll")
+        if vlc is None:
+            try:
+                vlc = __import__("vlc")
+            except (ImportError, OSError) as exc:
+                raise RuntimeError(f"VLC 재생기를 불러오지 못했습니다: {exc}") from exc
+        return vlc
+
+    @staticmethod
+    def _avi_frame_dimensions(source: Path) -> tuple[int, int]:
+        """AVI MainAVIHeader에서 원본 프레임 크기를 읽는다."""
+        try:
+            with source.open("rb") as input_file:
+                header = input_file.read(1024 * 1024)
+        except OSError as exc:
+            raise ValueError(f"AVI 헤더를 읽지 못했습니다: {exc}") from exc
+        header_offset = header.find(b"avih")
+        if header_offset < 0 or header_offset + 48 > len(header):
+            raise ValueError("AVI의 MainAVIHeader를 찾지 못했습니다.")
+        width, height = struct.unpack_from("<II", header, header_offset + 40)
+        if not 1 <= width <= 8192 or not 1 <= height <= 8192:
+            raise ValueError(f"AVI 프레임 크기가 올바르지 않습니다: {width}×{height}")
+        return width, height
+
     def _show_avi_preview(self, avi_id: int, title: str) -> None:
+        """VLC가 만든 RV32 프레임을 Tk PhotoImage로 팝업에 표시한다."""
         source = self._media_game_directory() / "AVI" / f"I{avi_id:02d}_0000.AVI"
         if not source.is_file():
             raise FileNotFoundError(f"AVI 파일을 찾을 수 없습니다.\n{source}")
-        if imageio_ffmpeg is None:
-            raise RuntimeError("AVI 미리보기에 필요한 FFmpeg 구성 요소를 찾을 수 없습니다.")
-        reader = None
-        try:
-            reader = imageio_ffmpeg.read_frames(str(source), pix_fmt="rgb24")
-            metadata = next(reader)
-            width, height = metadata.get("size", (0, 0))
-            fps = float(metadata.get("fps", 0))
-            if width <= 0 or height <= 0 or fps <= 0:
-                raise ValueError("AVI 영상의 크기 또는 프레임 속도를 읽지 못했습니다.")
-            frame_size = width * height * 3
-            images = []
-            for frame_data in reader:
-                if len(frame_data) != frame_size:
-                    raise ValueError("AVI 영상의 프레임 크기가 올바르지 않습니다.")
-                images.append(Image.frombytes("RGB", (width, height), frame_data).convert("RGBA"))
-        except (OSError, RuntimeError, StopIteration, ValueError) as exc:
-            raise ValueError(f"AVI 영상을 해석하지 못했습니다: {exc}") from exc
-        finally:
-            if reader is not None:
-                reader.close()
-        self._show_animation_preview(
-            tuple(images), title, frame_interval_ms=max(1, round(1000 / fps)),
+        width, height = self._avi_frame_dimensions(source)
+        vlc_module = self._load_vlc()
+
+        window = self._new_media_preview_window(title)
+        photo = tk.PhotoImage(master=window, width=width, height=height)
+        label = tk.Label(window, image=photo, background="black", borderwidth=0)
+        label.pack()
+        self._media_preview_image = photo
+        self._media_preview_label = label
+
+        pitch = width * 4
+        self._avi_vlc_buffer = (ctypes.c_ubyte * (height * pitch))()
+        lock_type = ctypes.CFUNCTYPE(
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p),
         )
+        display_type = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p)
+
+        def lock_frame(_opaque, planes):
+            planes[0] = ctypes.cast(self._avi_vlc_buffer, ctypes.c_void_p).value
+            return None
+
+        def mark_frame_ready(_opaque, _picture) -> None:
+            self._avi_vlc_frame_ready = True
+
+        self._avi_vlc_lock_callback = lock_type(lock_frame)
+        self._avi_vlc_display_callback = display_type(mark_frame_ready)
+        self._avi_vlc_instance = vlc_module.Instance(
+            "--vout=vmem", "--avcodec-hw=none", "--no-video-title-show",
+            "--quiet", "--no-audio", "--input-repeat=-1",
+        )
+        self._avi_vlc_player = self._avi_vlc_instance.media_player_new()
+        self._avi_vlc_player.video_set_callbacks(
+            self._avi_vlc_lock_callback, None, self._avi_vlc_display_callback, None,
+        )
+        self._avi_vlc_player.video_set_format("RV32", width, height, pitch)
+        self._avi_vlc_source = str(source)
+        self._avi_vlc_player.set_media(self._avi_vlc_instance.media_new(self._avi_vlc_source))
+        self._show_media_preview_window(window)
+        if self._avi_vlc_player.play() == -1:
+            raise RuntimeError("VLC가 AVI 재생을 시작하지 못했습니다.")
+        self._render_avi_preview_frame()
+
+    def _render_avi_preview_frame(self) -> None:
+        """VLC 디코더 버퍼의 최신 프레임을 Tk 메인 스레드에서 갱신한다."""
+        self._media_preview_after = None
+        window = self._media_preview_window
+        photo = self._media_preview_image
+        buffer = self._avi_vlc_buffer
+        player = self._avi_vlc_player
+        instance = self._avi_vlc_instance
+        source = self._avi_vlc_source
+        if (
+            window is None or photo is None or buffer is None or player is None
+            or instance is None or source is None
+        ):
+            return
+        try:
+            if not window.winfo_exists():
+                return
+            if self._avi_vlc_frame_ready:
+                self._avi_vlc_frame_ready = False
+                frame_bytes = bytes(buffer)
+                width, height = photo.width(), photo.height()
+                rgb = bytearray(width * height * 3)
+                rgb[0::3] = frame_bytes[2::4]
+                rgb[1::3] = frame_bytes[1::4]
+                rgb[2::3] = frame_bytes[0::4]
+                header = f"P6\n{width} {height}\n255\n".encode("ascii")
+                photo.configure(data=header + bytes(rgb), format="PPM")
+            if vlc is not None and player.get_state() == vlc.State.Ended:
+                player.set_media(instance.media_new(source))
+                player.play()
+            self._media_preview_after = window.after(33, self._render_avi_preview_frame)
+        except tk.TclError:
+            self._close_media_preview()
+
+    def _stop_avi_preview(self) -> None:
+        """VLC 플레이어와 프레임 콜백 자원을 해제한다."""
+        if self._avi_vlc_player is not None:
+            try:
+                self._avi_vlc_player.stop()
+                self._avi_vlc_player.release()
+            except Exception:
+                pass
+            self._avi_vlc_player = None
+        if self._avi_vlc_instance is not None:
+            try:
+                self._avi_vlc_instance.release()
+            except Exception:
+                pass
+            self._avi_vlc_instance = None
+        self._avi_vlc_buffer = None
+        self._avi_vlc_lock_callback = None
+        self._avi_vlc_display_callback = None
+        self._avi_vlc_frame_ready = False
+        self._avi_vlc_source = None
 
     def _show_media_preview_window(self, window: tk.Toplevel) -> None:
         self._center_popup(window)
@@ -4777,6 +4896,7 @@ class DisevEditor:
             except tk.TclError:
                 pass
             self._media_preview_after = None
+        self._stop_avi_preview()
         self._media_preview_frames = ()
         self._media_preview_frame_index = 0
         self._media_preview_frame_interval_ms = 80
@@ -7957,6 +8077,9 @@ class DisevEditor:
         if self._audio_preview_directory is not None:
             self._audio_preview_directory.cleanup()
             self._audio_preview_directory = None
+        if self._avi_vlc_dll_directory is not None:
+            self._avi_vlc_dll_directory.close()
+            self._avi_vlc_dll_directory = None
         self.search_edit.destroy()
         self.root.destroy()
 

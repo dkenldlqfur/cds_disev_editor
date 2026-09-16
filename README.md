@@ -55,6 +55,7 @@
 
 - Python 3.14 이상
 - Tkinter
+- python-vlc
 - PyInstaller
 
 소스 실행:
