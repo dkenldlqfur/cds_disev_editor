@@ -539,7 +539,7 @@ def describe_form(form: Form, raw: bytes, absolute_offset: int) -> str:
     if kind == "발견물 등록/발견 처리":
         return f"발견물 등록/발견 처리: ID {read_u16(raw, 2)}"
     if kind == "음원 재생":
-        return f"음원 재생: 슬롯 {read_u16(raw, 2)}"
+        return f"음원 재생: 음원 ID {read_u16(raw, 2)}"
     if kind.endswith("조건") and len(raw) == 4 and raw[:1] == b"\x17":
         return f"{kind}: 값 {read_u16(raw, 2)}"
     if kind == "연도 조건":

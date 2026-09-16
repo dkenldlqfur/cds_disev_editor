@@ -31,7 +31,13 @@ from urllib.request import Request, urlopen
 
 from PIL import Image, ImageTk
 
+try:
+    import imageio_ffmpeg
+except ImportError:  # 개발 환경에서 의존성이 빠졌을 때는 AVI 미리보기만 비활성화한다.
+    imageio_ffmpeg = None
+
 from Resources import dump_disev as disev
+from Resources.discovery_records import parse_pe_sections, va_to_file_offset
 
 
 def _resource_data_dirs() -> tuple[Path, ...]:
@@ -204,6 +210,33 @@ BODY_COMMAND_KINDS = (
     "소지금 증가", "소지금 감소", "교역품 활성화",
     "상태값 증감", "상태값 설정", "상태값 참조 증가", "국가 멸망 처리", "특수 상태 처리", "인물 상태 처리 1", "인물 상태 처리 2", "도시 국적 변경", "도시 점령지 설정", "도시 점령지 해제", "도시 제거", "도시 시설 제거", "이벤트 대상 도시 이동", "이벤트 결과 코드",
 )
+MEDIA_PREVIEW_KINDS = (
+    "DSTILL 이미지 표시", "EVSTILL 이미지 표시", "CG 애니메이션 재생", "AVI 재생",
+)
+MEDIA_COMMON_PALETTE_VA = 0x4FFDD8
+MEDIA_COMMON_PALETTE_START = 10
+MEDIA_COMMON_PALETTE_COLORS = 64
+MEDIA_LOCAL_PALETTE_START = 160
+MEDIA_LOCAL_PALETTE_COLORS = 86
+DISCOVER_FRAME_SIZE = 240 * 176
+FIGHTER_BACKGROUND_WIDTH = 384
+FIGHTER_BACKGROUND_HEIGHT = 136
+FIGHTER_BACKGROUND_FIRST_PART = 18
+FIGHTER_BACKGROUND_SET_COUNT = 7
+FIGHTER_LOCAL_PALETTE_START = 74
+LAND_BATTLEFIELD_WIDTH = 640
+LAND_BATTLEFIELD_HEIGHT = 480
+LAND_BATTLEFIELD_PALETTE_PART = 0
+LAND_BATTLEFIELD_PREVIEW_NAMES = ("석조/도시", "초원", "숲", "황무지·바위")
+LAND_BATTLEFIELD_PART_BY_NAME = {
+    name: part_index for part_index, name in enumerate(LAND_BATTLEFIELD_PREVIEW_NAMES, start=1)
+}
+EVSTILL_SCENE_NAMES = (
+    "반란 발생", "괴혈병·전염병 발생", "쥐떼 대량 발생", "대륙·항로 발견",
+    "확인된 사용처 없음", "확인된 사용처 없음", "해협·세계일주 항로 발견", "구혼 성공·동행 수락",
+    "출산·아이 이름 결정", "세대교체·후계자 계승", "무제국 이벤트", "게임 오버 배경 (종료 상태 0·4·5·6)",
+    "게임 오버 배경 (종료 상태 1·2)", "게임 오버 배경 (종료 상태 3)", "확인된 사용처 없음", "주인공 은퇴",
+)
 DIALOGUE_KINDS = ("대사", "예/아니오 대사", "다중 선택지 대사")
 CITY_STRING_COMMAND_KIND = "도시 소문 등록"
 # `화자명 + 81 46` 접두사가 있는 대사는 EXE가 화자별 경로로 처리한다.
@@ -220,6 +253,8 @@ TEXT_VALUE_COMMAND_KINDS = DIALOGUE_KINDS + (CITY_STRING_COMMAND_KIND,) + DISCOV
 CHARACTER_TARGET_COMMAND_KINDS = (
     "인물 상태 처리 1", "인물 상태 처리 2",
 )
+NAVAL_BATTLE_TARGET_ID_MIN = 262
+NAVAL_BATTLE_TARGET_ID_MAX = 274
 CITY_TARGET_COMMAND_KINDS = (
     "도시 국적 변경", "도시 점령지 설정", "도시 점령지 해제", "도시 제거", "도시 시설 제거", "이벤트 대상 도시 이동",
 )
@@ -256,6 +291,27 @@ SPECIAL_ENCOUNTER_TYPES = (
 SPECIAL_ENCOUNTER_SUBKINDS = tuple(name for _value, name in SPECIAL_ENCOUNTER_TYPES)
 SPECIAL_ENCOUNTER_VALUE_BY_SUBKIND = dict((name, value) for value, name in SPECIAL_ENCOUNTER_TYPES)
 SPECIAL_ENCOUNTER_SUBKIND_BY_VALUE = dict(SPECIAL_ENCOUNTER_TYPES)
+# CDS_95.EXE 0x49ABB0의 내부 연출 ID 분기와 각 클래스의 0x49A210
+# 로더 인수를 대조한 EVANIME.CDS 구성이다. 각 항목은
+# (픽셀 파트, 팔레트 파트, 스트립 폭, 한 프레임 높이) 순서다.
+SPECIAL_ENCOUNTER_EVANIME_PARTS = {
+    0: ((21, 47, 480, 96),),
+    1: ((22, 48, 352, 160), (23, 48, 128, 160)),
+    2: ((24, 49, 336, 100),),
+    3: ((11, 39, 96, 64), (12, 39, 384, 128)),
+    4: ((18, 44, 640, 192),),
+    5: ((25, 50, 208, 160), (26, 50, 288, 192), (27, 50, 384, 288)),
+    6: ((28, 51, 128, 128), (29, 51, 256, 256), (30, 51, 352, 352)),
+    7: ((15, 42, 192, 96), (16, 42, 32, 32)),
+}
+SPECIAL_ENCOUNTER_FRAME_INTERVAL_MS = 100
+# 원본 최소 해상도. EXE는 선택 해상도를 0x5AA2D8/0x5AA2DC에 넣고
+# 모든 특수 조우 좌표식을 이 값으로 계산한다.
+SPECIAL_ENCOUNTER_SCENE_SIZE = (640, 480)
+SPECIAL_ENCOUNTER_PREVIEW_SIZE = (480, 360)
+# 오프라인 편집기에는 현재 항해선 좌표가 없으므로, 특수 방향 보정이
+# 걸리지 않는 중립 방향에서 화면 아래쪽에 선박이 있는 대표 상태를 쓴다.
+SPECIAL_ENCOUNTER_REFERENCE_SHIP = (320, 360)
 BATTLEFIELD_SUBKINDS = ("현재 위치 지형 (자동)", "석조/도시 전장 (고정)")
 BATTLEFIELD_OPCODE_BY_SUBKIND = {"석조/도시 전장 (고정)": 0x08, "현재 위치 지형 (자동)": 0x0D}
 BATTLEFIELD_SUBKIND_BY_OPCODE = {value: name for name, value in BATTLEFIELD_OPCODE_BY_SUBKIND.items()}
@@ -490,21 +546,22 @@ BODY_KIND_GUIDE_DESCRIPTIONS = {
     "예/아니오 대사": "예·아니오 선택 대사를 표시하고 선택 결과를 저장합니다. 결과는 흐름 제어 | 이전 결과의 참·거짓 분기에서 사용합니다.",
     "다중 선택지 대사": "슬래시(/)로 구분한 선택지를 표시하고 선택값을 저장합니다. 흐름 제어 | 선택지에서 기대값과 비교할 수 있습니다.",
     "도시 소문 등록": "현재 날짜와 지정 도시를 붙여 소문·기록 로그에 문자열을 등록합니다. 일반 대화창 출력은 아닙니다.",
-    "AVI 재생": "지정한 AVI 번호의 동영상을 재생합니다.",
+    "AVI 재생": "AVI 파일과 연결 발견물 이름을 목록에서 선택해 동영상을 재생합니다. 표시 버튼으로 팝업 미리보기를 열 수 있습니다.",
     "발견물 등록/발견 처리": "대상 발견물을 등록하고 발견 완료 상태로 처리합니다.",
     "아이템 획득": "발견 보상에 연결된 아이템 획득 상태를 처리합니다.",
     "아이템 상실": "지정 아이템을 16칸 휴대 소지품 목록에서 제거합니다.",
     "이벤트 아이템 등록": "지정 아이템을 16칸 휴대 소지품 목록에 추가합니다. 발견물 보상 ID는 이 목록에 넣지 않고 건너뜁니다.",
     "이벤트 아이템 처리": "아이템에 연결된 별도 이벤트 상태를 처리 완료로 기록합니다. 소지품 목록 자체는 바꾸지 않습니다.",
-    "음원 재생": "지정한 음원 ID를 재생합니다.",
-    "음원 정지": "현재 재생 중인 음원을 정지합니다.",
-    "DSTILL 이미지 표시": "DSTILL에서 지정한 정지 이미지 번호를 표시합니다.",
-    "EVSTILL 이미지 표시": "EVSTILL에서 지정한 이미지 번호를 표시합니다.",
-    "CG 애니메이션 재생": "지정한 CG 애니메이션 번호를 재생합니다.",
+    "음원 재생": "통합 음원 ID를 재생합니다. ID 0~27은 Track02~29 BGM, 28~77은 WAVES.CDS 파트 0~49이며 편집 화면의 재생 버튼으로 미리들을 수 있습니다.",
+    "음원 정지": "같은 통합 음원 ID로 현재 재생 중인 BGM 또는 WAV 효과음을 정지합니다.",
+    "DSTILL 이미지 표시": "DSTILL 슬롯과 연결 발견물 이름을 목록에서 선택해 정지 이미지를 표시합니다. 표시 버튼으로 팝업 미리보기를 열 수 있습니다.",
+    "EVSTILL 이미지 표시": "16개 EVSTILL 슬롯의 실제 사용 기능을 목록에서 선택해 이미지를 표시합니다. 표시 버튼으로 팝업 미리보기를 열 수 있습니다.",
+    "CG 애니메이션 재생": "DISCOVER.CDS 파트와 연결 발견물 이름을 목록에서 선택해 CG를 재생합니다. 표시 버튼으로 팝업 미리보기를 열 수 있습니다.",
+    "특수 조우 연출 설정": "백경·돌고래·날치·유령선·오로라·플라밍고·모르포 나비·유빙 연출을 지정합니다. 표시 버튼으로 EVANIME.CDS 연출을 미리 볼 수 있습니다.",
     "해상 전투": "지정한 해상 조우 상대와 전투를 시작하고 결과를 저장합니다. 승패 경로는 흐름 제어 | 이전 결과에서 나눕니다.",
     "일기토 실행": "이름으로 선택한 상대 인물과 일기토를 시작하고 결과를 저장합니다. 앞서 지정한 일기토 연출 세트를 사용합니다.",
-    "육상전 실행": "전장과 상대 인물을 선택해 육상전을 시작합니다. 자동 전장은 현재 위치 지형을, 고정 전장은 석조·도시 배경을 사용합니다.",
-    "일기토 연출 세트 설정": "다음 일기토가 FIGHTER.CDS에서 읽을 그래픽·팔레트 세트를 지정합니다. 유효 범위는 0~6입니다.",
+    "육상전 실행": "전장과 상대 인물을 선택해 육상전을 시작합니다. 자동 전장은 현재 위치 지형을, 고정 전장은 석조·도시 배경을 사용합니다. 아래 미리보기 선택은 저장값을 바꾸지 않습니다.",
+    "일기토 연출 세트 설정": "다음 일기토가 FIGHTER.CDS에서 읽을 그래픽·팔레트 세트를 지정합니다. 유효 범위는 0~6이며, 표시 버튼으로 세트의 배경을 미리 볼 수 있습니다.",
     "이벤트 내부 참조": "파트 시작 주소에 저장된 u16 오프셋을 더한 위치로 무조건 이동합니다. 유효한 명령 목적지는 행 번호로 표시하고 저장할 때 오프셋을 다시 계산합니다.",
     "델포이 신탁 출력": "주인공의 비중립 성격, 자녀 적성, 배우자 정보와 남은 수명 경고를 신탁 메시지로 출력합니다. 성격값은 바꾸지 않습니다.",
     "힌트 획득": "지정한 발견물 힌트를 활성화해 이후 힌트 조건과 발견 이벤트에서 사용할 수 있게 합니다.",
@@ -572,8 +629,7 @@ def _body_guide_description(path: tuple[str, str, str], kind: str) -> str:
     if kind in CONDITIONAL_BRANCH_KINDS:
         condition = action[:-2] if action.endswith("이동") else action + "일 때 "
         note = BODY_BRANCH_GUIDE_NOTES.get(kind, "")
-        value_note = " 값·목적 행 열에는 목적 행 번호만 표시합니다."
-        return f"{condition}지정한 목적 행으로 이동합니다.{value_note}{(' ' + note) if note else ''}"
+        return f"{condition}지정한 목적 행으로 이동합니다."
     return BODY_KIND_GUIDE_DESCRIPTIONS[kind]
 
 
@@ -586,11 +642,7 @@ if _missing_body_guide_kinds:
 BODY_COMMAND_GUIDE = tuple(
     ("본문", " | ".join(path), _body_guide_description(path, kind))
     for path, kind in BODY_PATH_TO_KIND.items()
-) + ((
-    "본문",
-    "판정 | 주인공 능력치 | 미지원 판정 ID (원본 보존)",
-    "알려진 네 값(6·18·21·23) 이외의 35 1C 명령을 손실 없이 보존합니다. 난수·연출·결과 갱신 없이 직전 판정 결과를 유지합니다.",
-),)
+)
 
 COMMAND_GUIDE = CONDITION_COMMAND_GUIDE + BODY_COMMAND_GUIDE
 HIDDEN_COMMAND_GUIDES = frozenset()
@@ -962,6 +1014,7 @@ class DisevEditor:
         self.original_parts: list[bytes] = []
         self.rows: list[disev.DiscoveryRow] = []
         self.discovery_part_map: dict[int, int] = {}
+        self._script_media_name_cache: dict[str, dict[int, tuple[str, ...]]] = {}
         self.modified: set[int] = set()
         self.current_index: int | None = None
         self.current_discovery_id: int | None = None
@@ -969,6 +1022,26 @@ class DisevEditor:
         self.pending = False
         self._update_check_in_progress = False
         self._update_download_in_progress = False
+        self._available_update: tuple[dict[str, object], dict[str, object]] | None = None
+        self._update_menu_index: int | None = None
+        self._audio_preview_alias = "disev_audio_preview"
+        self._audio_preview_active = False
+        self._audio_preview_after: str | None = None
+        self._audio_preview_directory = None
+        self.body_audio_preview_button: ttk.Button | None = None
+        self.body_audio_combo: ttk.Combobox | None = None
+        self._media_preview_window: tk.Toplevel | None = None
+        self._media_preview_label: tk.Label | None = None
+        self._media_preview_image: ImageTk.PhotoImage | None = None
+        self._media_preview_frames: tuple[ImageTk.PhotoImage, ...] = ()
+        self._media_preview_frame_index = 0
+        self._media_preview_frame_interval_ms = 80
+        self._media_preview_loop = True
+        self._media_preview_after: str | None = None
+        self.body_media_preview_button: ttk.Button | None = None
+        self.body_media_combo: ttk.Combobox | None = None
+        self.body_battlefield_preview_button: ttk.Button | None = None
+        self.body_battlefield_preview_combo: ttk.Combobox | None = None
         self._update_notice = self._consume_update_notice()
         self.filter_after: str | None = None
         self.discovery_column_fit_after: str | None = None
@@ -999,6 +1072,8 @@ class DisevEditor:
         self.body_subkind_var = tk.StringVar()
         self.body_detail_var = tk.StringVar()
         self.body_value_var = tk.StringVar()
+        self.body_audio_var = tk.StringVar()
+        self.body_media_var = tk.StringVar()
         self.body_value2_var = tk.StringVar()
         self.body_range_end_var = tk.StringVar()
         self.special_check_value_var = tk.StringVar()
@@ -1014,6 +1089,9 @@ class DisevEditor:
         self.body_stat_target_var = tk.StringVar()
         self.body_source_stat_var = tk.StringVar()
         self.body_battlefield_var = tk.StringVar(value=BATTLEFIELD_SUBKINDS[0])
+        self.body_battlefield_preview_var = tk.StringVar(
+            value=LAND_BATTLEFIELD_PREVIEW_NAMES[0],
+        )
         # 상태값 참조 증가(19 1C)의 실제 실행 결과를 즉시 설명한다.
         # 대상과 참조 원천은 분류가 아닌 피연산자이므로 각각 별도 선택기로 둔다.
         # 관계를 별도 문장으로 보여 주어 선택 변경이 명확히 드러나게 한다.
@@ -1216,25 +1294,49 @@ class DisevEditor:
             combo.event_generate("<<ComboboxSelected>>")
         return "break"
 
-    def _build_ui(self) -> None:
-        toolbar = ttk.Frame(self.root, padding=(8, 7, 8, 5))
-        toolbar.pack(fill="x")
-        ttk.Button(toolbar, text=ui("open_disev"), command=self._open_disev).pack(side="left")
-        ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=8)
-        ttk.Button(toolbar, text=ui("save"), command=self._save).pack(side="left")
-        self.update_button = ttk.Button(toolbar, text=ui("check_updates"), command=self.check_for_updates)
-        self.theme_combo = ttk.Combobox(
-            toolbar, textvariable=self.theme_var, values=self.theme_names,
-            state="readonly", width=11,
+    def _build_menu_bar(self) -> None:
+        """파일 작업과 테마 선택을 창의 네이티브 메뉴바에 구성한다."""
+        self.menu_bar = tk.Menu(self.root, tearoff=False)
+
+        file_menu = tk.Menu(self.menu_bar, tearoff=False)
+        file_menu.add_command(
+            label=ui("open_disev"), command=self._open_disev, accelerator="Ctrl+O",
         )
-        self.theme_combo.pack(side="right")
-        self.theme_combo.bind("<<ComboboxSelected>>", self._change_theme)
-        ttk.Label(toolbar, text=ui("theme")).pack(side="right", padx=(0, 4))
-        ttk.Label(toolbar, text=ui("fixed_length_mode")).pack(side="right")
+        file_menu.add_command(
+            label=ui("save"), command=self._save, accelerator="Ctrl+S",
+        )
+        file_menu.add_separator()
+        file_menu.add_command(label=ui("exit"), command=self._close)
+        self.menu_bar.add_cascade(label=ui("file_menu"), menu=file_menu)
+
+        theme_menu = tk.Menu(self.menu_bar, tearoff=False)
+        for theme_name in self.theme_names:
+            theme_menu.add_radiobutton(
+                label=theme_name,
+                value=theme_name,
+                variable=self.theme_var,
+                command=self._change_theme,
+            )
+        self.menu_bar.add_cascade(label=ui("theme_menu"), menu=theme_menu)
+
+        self.root.configure(menu=self.menu_bar)
+        self.root.bind("<Control-o>", self._open_disev_shortcut)
+        self.root.bind("<Control-s>", self._save_shortcut)
+
+    def _open_disev_shortcut(self, _event: tk.Event) -> str:
+        self._open_disev()
+        return "break"
+
+    def _save_shortcut(self, _event: tk.Event) -> str:
+        self._save()
+        return "break"
+
+    def _build_ui(self) -> None:
+        self._build_menu_bar()
 
         pane = ttk.Panedwindow(self.root, orient="horizontal")
         self.main_pane = pane
-        pane.pack(fill="both", expand=True, padx=8, pady=(0, 5))
+        pane.pack(fill="both", expand=True, padx=8, pady=(8, 5))
 
         left = ttk.Frame(pane, padding=5)
         right = ttk.Frame(pane, padding=5)
@@ -1394,19 +1496,57 @@ class DisevEditor:
         self.guide_filter_combo.bind("<<ComboboxSelected>>", self._refresh_command_guide)
         host = ttk.Frame(parent)
         host.pack(fill="both", expand=True)
+        # 긴 설명 열의 요청 폭으로 창 자체가 커지지 않게 하고, 넘치는 폭은
+        # 아래 가로 스크롤바로 탐색한다.
+        host.grid_propagate(False)
+        host.rowconfigure(0, weight=1)
+        host.columnconfigure(0, weight=1)
         self.command_guide_tree = ttk.Treeview(host, columns=("area", "command", "description"), show="headings")
         self.command_guide_tree.heading("area", text=ui("guide_area"))
         self.command_guide_tree.heading("command", text=ui("guide_command"))
         self.command_guide_tree.heading("description", text=ui("guide_description"))
         self.command_guide_tree.column("area", width=72, anchor="center", stretch=False)
         self.command_guide_tree.column("command", width=330, anchor="w", stretch=False)
-        self.command_guide_tree.column("description", width=500, anchor="w", stretch=True)
-        scrollbar = ttk.Scrollbar(host, orient="vertical", command=self.command_guide_tree.yview)
-        self.command_guide_tree.configure(yscrollcommand=scrollbar.set)
-        self.command_guide_tree.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        self.command_guide_tree.column("description", width=900, anchor="w", stretch=False)
+        self.command_guide_yscrollbar = ttk.Scrollbar(
+            host, orient="vertical", command=self.command_guide_tree.yview,
+        )
+        self.command_guide_xscrollbar = ttk.Scrollbar(
+            host, orient="horizontal", command=self.command_guide_tree.xview,
+        )
+        self.command_guide_tree.configure(
+            yscrollcommand=self.command_guide_yscrollbar.set,
+            xscrollcommand=self.command_guide_xscrollbar.set,
+        )
+        self.command_guide_tree.grid(row=0, column=0, sticky="nsew")
+        self.command_guide_yscrollbar.grid(row=0, column=1, sticky="ns")
+        self.command_guide_xscrollbar.grid(row=1, column=0, sticky="ew")
+        self.command_guide_tree.bind("<Configure>", self._fit_command_guide_columns, add="+")
         self._enable_tree_zebra(self.command_guide_tree)
         self._refresh_command_guide()
+
+    def _fit_command_guide_columns(self, _event=None) -> None:
+        """창 크기에 맞춰 설명 목록의 명령·설명 열을 함께 확장한다."""
+        tree = self.command_guide_tree
+        if not tree.winfo_exists() or tree.winfo_width() <= 1:
+            return
+        available = max(1, tree.winfo_width() - 2)
+        area_width = 72
+        remainder = max(1, available - area_width)
+        minimum_command = 330
+        minimum_description = 600
+        if remainder >= minimum_command + minimum_description:
+            command_width = max(minimum_command, int(remainder * 0.30))
+            description_width = remainder - command_width
+        else:
+            command_width = minimum_command
+            description_width = minimum_description
+        tree.column("area", width=area_width, minwidth=area_width, stretch=False)
+        tree.column("command", width=command_width, minwidth=minimum_command, stretch=False)
+        tree.column(
+            "description", width=description_width,
+            minwidth=minimum_description, stretch=False,
+        )
 
     def _refresh_command_guide(self, _event=None) -> None:
         """선택한 구분에 맞게 명령 안내 목록을 다시 채운다."""
@@ -1417,6 +1557,7 @@ class DisevEditor:
             if row[1] in HIDDEN_COMMAND_GUIDES or (selected != "전체" and row[0] != selected):
                 continue
             tree.insert("", "end", iid=f"guide-{index}", values=row)
+        self.root.after_idle(self._fit_command_guide_columns)
 
     @staticmethod
     def _enable_tree_zebra(tree: ttk.Treeview) -> None:
@@ -1712,6 +1853,22 @@ class DisevEditor:
         x = max(0, (self.root.winfo_screenwidth() - width) // 2)
         y = max(0, (self.root.winfo_screenheight() - height) // 2)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _center_popup(
+        self,
+        popup: tk.Toplevel,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> None:
+        """자체 팝업을 화면이 아닌 메인 편집기 창의 정중앙에 배치한다."""
+        self.root.update_idletasks()
+        popup.update_idletasks()
+        popup_width = width if width is not None else popup.winfo_reqwidth()
+        popup_height = height if height is not None else popup.winfo_reqheight()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - popup_width) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - popup_height) // 2
+        size = f"{popup_width}x{popup_height}" if width is not None or height is not None else ""
+        popup.geometry(f"{size}+{x}+{y}")
 
     def _place_discovery_pane(self) -> None:
         """창이 표시된 뒤 실제 폭을 기준으로 좌측 발견물 패널을 배치한다."""
@@ -2407,6 +2564,8 @@ class DisevEditor:
             self._set_body_character(int(value))
         if kind in ("일기토 실행", "육상전 실행"):
             self._set_body_npc(int(value))
+        if kind == "해상 전투":
+            self._set_body_npc(int(value), self._naval_battle_targets())
         if kind in CHARACTER_TARGET_COMMAND_KINDS:
             self._set_body_npc(int(token["character_id"]))
         if kind in CITY_TARGET_COMMAND_KINDS:
@@ -2522,6 +2681,8 @@ class DisevEditor:
         self.body_stat_target_var.set("")
         self.body_source_stat_var.set("")
         self.body_hint_var.set("")
+        self.body_audio_var.set("")
+        self.body_media_var.set("")
         self.body_battlefield_var.set(BATTLEFIELD_SUBKINDS[0])
 
     def _body_kind_changed(self, _event=None) -> None:
@@ -2855,12 +3016,21 @@ class DisevEditor:
         self, kind: str, group: str, subkinds: tuple[str, ...], detail_kinds: tuple[str, ...],
     ) -> None:
         """Place command parameters above, and keep the lower row to one final value."""
+        # 다른 명령으로 이동하면 이전 행의 미리듣기를 남기지 않는다.
+        self._stop_audio_preview()
+        self._close_media_preview()
         for widget in self.body_classification_controls:
             widget.destroy()
         self.body_classification_controls.clear()
         for row in (self.body_auxiliary_row, self.body_input_row):
             for child in row.winfo_children():
                 child.destroy()
+        self.body_audio_preview_button = None
+        self.body_audio_combo = None
+        self.body_media_preview_button = None
+        self.body_media_combo = None
+        self.body_battlefield_preview_button = None
+        self.body_battlefield_preview_combo = None
         self.body_auxiliary_row.grid_remove()
 
         # 분류행: 마지막 분류가 정해진 뒤에만 그에 맞는 선택기를 표시한다.
@@ -2917,6 +3087,17 @@ class DisevEditor:
                 value_row, variable, width=520, numeric=not text_entry, allow_negative=allow_negative,
             ).grid(row=0, column=1, sticky="ew", padx=(5, 0))
 
+        def final_combo(text: str, variable: tk.StringVar, values: tuple[str, ...]) -> ttk.Combobox:
+            """값 행 전체를 사용하는 제한 선택 콤보박스를 표시한다."""
+            ttk.Label(value_row, text=text).grid(row=0, column=0, sticky="e")
+            widget = ttk.Combobox(
+                value_row, textvariable=variable, values=values, state="readonly",
+            )
+            widget.grid(row=0, column=1, sticky="ew", padx=(5, 0))
+            widget.bind("<Up>", self._cycle_combobox)
+            widget.bind("<Down>", self._cycle_combobox)
+            return widget
+
         def range_value(text: str, *, allow_negative: bool = False, end_label: str) -> None:
             """값 행에 시작값·랜덤 선택·종료값을 함께 표시한다."""
             ttk.Label(value_row, text=text).grid(row=0, column=0, sticky="e")
@@ -2943,6 +3124,56 @@ class DisevEditor:
             "결과 거짓 설정", "게임 오버", "델포이 신탁 출력",
         }
         if kind in no_input:
+            return
+
+        if kind == "음원 재생":
+            ttk.Label(value_row, text="음원:").grid(row=0, column=0, sticky="e")
+            choices = self._audio_preview_choices()
+            self.body_audio_combo = ttk.Combobox(
+                value_row, textvariable=self.body_audio_var, values=choices, state="readonly",
+            )
+            self.body_audio_combo.grid(row=0, column=1, sticky="ew", padx=(5, 0))
+            self.body_audio_combo.bind("<<ComboboxSelected>>", self._body_audio_selected)
+            self.body_audio_combo.bind("<Up>", self._cycle_combobox)
+            self.body_audio_combo.bind("<Down>", self._cycle_combobox)
+            self._autosize_combobox(self.body_audio_combo, maximum=48)
+            try:
+                sound_id = int(self.body_value_var.get().strip() or "0", 10)
+            except ValueError:
+                sound_id = 0
+            self._set_body_audio(sound_id if 0 <= sound_id <= 77 else 0)
+            self.body_audio_preview_button = ttk.Button(
+                value_row, text="▶ 재생", width=9, command=self._toggle_audio_preview,
+            )
+            self.body_audio_preview_button.grid(row=0, column=2, sticky="w", padx=(8, 0))
+            return
+
+        if kind in MEDIA_PREVIEW_KINDS:
+            value_label = {
+                "DSTILL 이미지 표시": "이미지 슬롯:",
+                "EVSTILL 이미지 표시": "이미지 슬롯:",
+                "CG 애니메이션 재생": "애니메이션 파트:",
+                "AVI 재생": "AVI ID:",
+            }[kind]
+            ttk.Label(value_row, text=value_label).grid(row=0, column=0, sticky="e")
+            try:
+                media_id = int(self.body_value_var.get().strip() or "0", 10)
+            except ValueError:
+                media_id = 0
+            choices = self._media_preview_choices(kind, current_id=media_id)
+            self.body_media_combo = ttk.Combobox(
+                value_row, textvariable=self.body_media_var, values=choices, state="readonly",
+            )
+            self.body_media_combo.grid(row=0, column=1, sticky="ew", padx=(5, 0))
+            self.body_media_combo.bind("<<ComboboxSelected>>", self._body_media_selected)
+            self.body_media_combo.bind("<Up>", self._cycle_combobox)
+            self.body_media_combo.bind("<Down>", self._cycle_combobox)
+            self._autosize_combobox(self.body_media_combo, maximum=64)
+            self._set_body_media(media_id, choices)
+            self.body_media_preview_button = ttk.Button(
+                value_row, text="표시", width=9, command=self._show_media_preview,
+            )
+            self.body_media_preview_button.grid(row=0, column=2, sticky="w", padx=(8, 0))
             return
 
         # 분기 대상과 비교 피연산자는 분류가 아니라 이름이 붙은 별도 선택기로 둔다.
@@ -2986,10 +3217,23 @@ class DisevEditor:
 
         if group == "전투·미니게임" and self.body_subkind_var.get() == "미니게임":
             if MINIGAME_TYPE_BY_SUBKIND.get(self.body_detail_var.get()) == 5:
-                final_value("원반 수:", self.special_check_value_var)
+                if self.special_check_value_var.get() not in ("4", "5", "6", "7"):
+                    self.special_check_value_var.set("4")
+                final_combo("원반 수:", self.special_check_value_var, ("4", "5", "6", "7"))
             return
         if group == "표시·연출" and self.body_subkind_var.get() == "특수 조우":
             # 동작으로 고른 종류가 00 1E의 u16 값이므로 별도 수치 입력은 노출하지 않는다.
+            ttk.Label(value_row, text="EVANIME 연출:").grid(row=0, column=0, sticky="e")
+            ttk.Label(value_row, text=self.body_detail_var.get()).grid(
+                row=0, column=1, sticky="w", padx=(5, 0),
+            )
+            self.body_media_preview_button = ttk.Button(
+                value_row, text="표시", width=9,
+                command=self._show_special_encounter_preview,
+            )
+            self.body_media_preview_button.grid(
+                row=0, column=2, sticky="w", padx=(8, 0),
+            )
             return
         if kind in DIALOGUE_KINDS:
             final_value("대사:", self.body_value_var, text_entry=True)
@@ -3023,6 +3267,43 @@ class DisevEditor:
             if kind == "육상전 실행":
                 aux_label(2, "전장:")
                 aux_combo(3, self.body_battlefield_var, BATTLEFIELD_SUBKINDS)
+                if self.body_battlefield_preview_var.get() not in LAND_BATTLEFIELD_PREVIEW_NAMES:
+                    self.body_battlefield_preview_var.set(LAND_BATTLEFIELD_PREVIEW_NAMES[0])
+                ttk.Label(value_row, text="전장 미리보기:").grid(
+                    row=0, column=0, sticky="e",
+                )
+                self.body_battlefield_preview_combo = ttk.Combobox(
+                    value_row, textvariable=self.body_battlefield_preview_var,
+                    values=LAND_BATTLEFIELD_PREVIEW_NAMES, state="readonly",
+                )
+                self.body_battlefield_preview_combo.grid(
+                    row=0, column=1, sticky="ew", padx=(5, 0),
+                )
+                self.body_battlefield_preview_combo.bind(
+                    "<<ComboboxSelected>>",
+                    lambda _event: self._close_media_preview(), add="+",
+                )
+                self.body_battlefield_preview_combo.bind("<Up>", self._cycle_combobox)
+                self.body_battlefield_preview_combo.bind("<Down>", self._cycle_combobox)
+                self.body_battlefield_preview_button = ttk.Button(
+                    value_row, text="표시", width=9,
+                    command=self._show_land_battlefield_preview,
+                )
+                self.body_battlefield_preview_button.grid(
+                    row=0, column=2, sticky="w", padx=(8, 0),
+                )
+            return
+        if kind == "해상 전투":
+            targets = self._naval_battle_targets()
+            final_combo(
+                "해상전 상대:", self.body_character_var,
+                tuple(
+                    self._body_target_display(character_id, name)
+                    for character_id, name in targets
+                ),
+            )
+            if not self.body_character_var.get() and targets:
+                self._set_body_npc(targets[0][0], targets)
             return
         if kind in CHARACTER_TARGET_COMMAND_KINDS:
             aux_label(0, "인물:")
@@ -3214,7 +3495,22 @@ class DisevEditor:
             final_value(branch_target_label(kind), self.body_value_var)
             return
         if kind == "일기토 연출 세트 설정":
-            final_value("일기토 연출 세트 (0~6):", self.body_value_var)
+            if self.body_value_var.get() not in tuple(str(value) for value in range(7)):
+                self.body_value_var.set("0")
+            widget = final_combo(
+                "일기토 연출 세트:", self.body_value_var,
+                tuple(str(value) for value in range(7)),
+            )
+            widget.bind(
+                "<<ComboboxSelected>>", lambda _event: self._close_media_preview(), add="+",
+            )
+            self.body_media_preview_button = ttk.Button(
+                value_row, text="표시", width=9,
+                command=self._show_fighter_background_preview,
+            )
+            self.body_media_preview_button.grid(
+                row=0, column=2, sticky="w", padx=(8, 0),
+            )
             return
         if kind == "이벤트 조건 판정":
             if self.body_detail_var.get() in EVENT_CONDITION_CODE_BY_SUBKIND:
@@ -3227,13 +3523,1273 @@ class DisevEditor:
         if kind == "특수 상태 처리":
             final_value("원본 인수:", self.body_value_var)
             return
-        if kind == "해상 전투":
-            final_value("해상 조우 상대 ID:", self.body_value_var)
-            return
         if kind == "대기":
             final_value("초:", self.body_value_var)
             return
         final_value("값:", self.body_value_var)
+
+    def _mci_send(self, command: str, *, ignore_errors: bool = False) -> str:
+        """Windows MCI 명령을 보내고 문자열 결과를 반환한다."""
+        try:
+            winmm = ctypes.WinDLL("winmm")
+            send = winmm.mciSendStringW
+            send.argtypes = (
+                ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint, ctypes.c_void_p,
+            )
+            send.restype = ctypes.c_uint
+            result_buffer = ctypes.create_unicode_buffer(512)
+            error_code = int(send(command, result_buffer, len(result_buffer), None))
+            if error_code and not ignore_errors:
+                error_buffer = ctypes.create_unicode_buffer(512)
+                get_error = winmm.mciGetErrorStringW
+                get_error.argtypes = (ctypes.c_uint, ctypes.c_wchar_p, ctypes.c_uint)
+                get_error.restype = ctypes.c_bool
+                detail = ""
+                if get_error(error_code, error_buffer, len(error_buffer)):
+                    detail = error_buffer.value
+                raise OSError(detail or f"MCI 오류 {error_code}")
+            return result_buffer.value.strip()
+        except (AttributeError, OSError) as exc:
+            if ignore_errors:
+                return ""
+            raise OSError(f"Windows 음원 재생기를 사용할 수 없습니다: {exc}") from exc
+
+    def _configured_bgm_paths(self) -> tuple[Path, ...]:
+        """게임 설정을 반영한 통합 음원 ID 0~27의 BGM 경로를 반환한다."""
+        game_directory = self.disev_path.parent if self.disev_path is not None else Path()
+        paths = [game_directory / "bgm" / f"Track{track_number:02d}.mp3" for track_number in range(2, 30)]
+        inmm_path = game_directory / "_inmm.ini"
+        if not inmm_path.is_file():
+            return tuple(paths)
+        try:
+            mappings = [
+                line.strip().strip('"')
+                for line in inmm_path.read_text(encoding="mbcs").splitlines()
+                if line.strip() and not line.lstrip().startswith((";", "#"))
+            ]
+        except OSError:
+            return tuple(paths)
+        for sound_id, mapping in enumerate(mappings[:28]):
+            configured = Path(mapping)
+            paths[sound_id] = configured if configured.is_absolute() else game_directory / configured
+        return tuple(paths)
+
+    def _audio_preview_choices(self) -> tuple[str, ...]:
+        """통합 음원 ID 전체를 이름이 보이는 콤보박스 항목으로 만든다."""
+        choices = [
+            f"{sound_id:03d} | BGM · {source.name}"
+            for sound_id, source in enumerate(self._configured_bgm_paths())
+        ]
+        choices.extend(
+            f"{sound_id:03d} | 효과음 · WAVES.CDS 파트 {sound_id - 28:02d}"
+            for sound_id in range(28, 78)
+        )
+        return tuple(choices)
+
+    def _set_body_audio(self, sound_id: int) -> None:
+        """선택 표시와 파일에 기록할 숫자 ID를 함께 맞춘다."""
+        if not 0 <= sound_id <= 77:
+            raise ValueError("음원 ID의 유효 범위는 0~77입니다.")
+        choices = self._audio_preview_choices()
+        self.body_audio_var.set(choices[sound_id])
+        self.body_value_var.set(str(sound_id))
+
+    def _body_audio_id(self) -> int:
+        """음원 콤보박스에서 파일에 저장할 통합 음원 ID를 얻는다."""
+        selection = self.body_audio_var.get().strip()
+        try:
+            sound_id = int(selection.partition("|")[0].strip(), 10)
+        except ValueError as exc:
+            raise ValueError("목록에 있는 음원을 선택하세요.") from exc
+        if not 0 <= sound_id <= 77:
+            raise ValueError("음원 ID의 유효 범위는 0~77입니다.")
+        return sound_id
+
+    def _body_audio_selected(self, _event=None) -> None:
+        """콤보박스 선택을 원본 명령 값에 반영한다."""
+        self._stop_audio_preview()
+        self.body_value_var.set(str(self._body_audio_id()))
+
+    def _audio_preview_source(self, sound_id: int) -> tuple[Path, str, str]:
+        """통합 음원 ID를 미리듣기 파일과 MCI 장치 종류로 변환한다."""
+        if self.disev_path is None:
+            raise ValueError("먼저 DISEV.CDS를 열어야 합니다.")
+        game_directory = self.disev_path.parent
+        if sound_id < 28:
+            source = self._configured_bgm_paths()[sound_id]
+            if not source.is_file():
+                raise FileNotFoundError(f"BGM 파일을 찾을 수 없습니다.\n{source}")
+            device_type = "waveaudio" if source.suffix.lower() == ".wav" else "mpegvideo"
+            return source, device_type, f"음원 ID {sound_id} · {source.name}"
+
+        waves_path = game_directory / "WAVES.CDS"
+        if not waves_path.is_file():
+            raise FileNotFoundError(f"효과음 파일을 찾을 수 없습니다.\n{waves_path}")
+        archive = waves_path.read_bytes()
+        entries = disev.parse_archive(archive)
+        part_index = sound_id - 28
+        if not 0 <= part_index < len(entries):
+            raise ValueError(
+                f"음원 ID {sound_id}에 대응하는 WAVES.CDS 파트 {part_index}가 없습니다."
+            )
+        wav_data = disev.decode_part(archive, entries[part_index], archive[0x10:0x110])
+        if wav_data[:4] != b"RIFF" or wav_data[8:12] != b"WAVE":
+            raise ValueError(f"WAVES.CDS 파트 {part_index}가 RIFF WAVE 형식이 아닙니다.")
+        if self._audio_preview_directory is None:
+            self._audio_preview_directory = tempfile.TemporaryDirectory(
+                prefix="DISEV_Editor_audio_",
+            )
+        source = Path(self._audio_preview_directory.name) / f"WAVES_{part_index:02d}.wav"
+        source.write_bytes(wav_data)
+        return source, "waveaudio", f"음원 ID {sound_id} · WAVES.CDS 파트 {part_index}"
+
+    def _toggle_audio_preview(self) -> None:
+        """현재 음원 ID를 한 번 재생하거나 진행 중인 미리듣기를 정지한다."""
+        if self._audio_preview_active:
+            self._stop_audio_preview()
+            return
+        try:
+            sound_id = self._body_audio_id()
+        except ValueError:
+            messagebox.showerror(
+                "음원 미리듣기", "목록에 있는 음원을 선택하세요.", parent=self.root,
+            )
+            return
+        try:
+            source, device_type, description = self._audio_preview_source(sound_id)
+            if '"' in str(source):
+                raise ValueError("큰따옴표가 들어간 파일 경로는 재생할 수 없습니다.")
+            self._mci_send(f"close {self._audio_preview_alias}", ignore_errors=True)
+            self._mci_send(
+                f'open "{source.resolve()}" type {device_type} alias {self._audio_preview_alias}'
+            )
+            try:
+                self._mci_send(f"play {self._audio_preview_alias} from 0")
+            except OSError:
+                self._mci_send(f"close {self._audio_preview_alias}", ignore_errors=True)
+                raise
+        except (OSError, ValueError, struct.error) as exc:
+            messagebox.showerror("음원 미리듣기", str(exc), parent=self.root)
+            return
+        self._audio_preview_active = True
+        if self.body_audio_preview_button is not None:
+            self.body_audio_preview_button.configure(text="■ 정지")
+        self.status_var.set(f"미리듣기 재생 중: {description}")
+        self._audio_preview_after = self.root.after(200, self._poll_audio_preview)
+
+    def _poll_audio_preview(self) -> None:
+        """MCI 재생 완료를 확인해 버튼을 재생 상태로 되돌린다."""
+        self._audio_preview_after = None
+        if not self._audio_preview_active:
+            return
+        try:
+            mode = self._mci_send(f"status {self._audio_preview_alias} mode").lower()
+        except OSError:
+            mode = ""
+        if mode in ("playing", "seeking", "paused"):
+            self._audio_preview_after = self.root.after(200, self._poll_audio_preview)
+            return
+        self._stop_audio_preview()
+
+    def _stop_audio_preview(self) -> None:
+        """현재 미리듣기 장치를 닫고 UI를 초기 상태로 돌린다."""
+        was_active = self._audio_preview_active
+        if self._audio_preview_after is not None:
+            try:
+                self.root.after_cancel(self._audio_preview_after)
+            except tk.TclError:
+                pass
+            self._audio_preview_after = None
+        if self._audio_preview_active:
+            self._mci_send(f"stop {self._audio_preview_alias}", ignore_errors=True)
+            self._mci_send(f"close {self._audio_preview_alias}", ignore_errors=True)
+        self._audio_preview_active = False
+        button = self.body_audio_preview_button
+        if button is not None:
+            try:
+                if button.winfo_exists():
+                    button.configure(text="▶ 재생")
+            except tk.TclError:
+                pass
+        if was_active:
+            self.status_var.set("음원 미리듣기가 종료되었습니다.")
+
+    def _media_game_directory(self) -> Path:
+        if self.disev_path is None:
+            raise ValueError("먼저 DISEV.CDS를 열어야 합니다.")
+        return self.disev_path.parent
+
+    def _media_discovery_names(self, field: str) -> dict[int, tuple[str, ...]]:
+        """EXE 발견물 레코드의 미디어 필드별로 연결된 발견물 이름을 모은다."""
+        if not any(row.file_offset for row in self.rows):
+            return {}
+        names: dict[int, list[str]] = {}
+        for row in self.rows:
+            media_id = int(getattr(row, field))
+            if media_id == 0xFFFFFFFF:
+                continue
+            bucket = names.setdefault(media_id, [])
+            if row.name not in bucket:
+                bucket.append(row.name)
+        return {media_id: tuple(items) for media_id, items in names.items()}
+
+    def _script_media_names(self, kind: str) -> dict[int, tuple[str, ...]]:
+        """DISEV 명령 사용처를 역추적해 미디어 ID별 발견물 이름을 모은다."""
+        cached = self._script_media_name_cache.get(kind)
+        if cached is not None:
+            return cached
+        if not self.parts or not self.discovery_part_map:
+            return {}
+        part_names: dict[int, list[str]] = {}
+        for row in self.rows:
+            part_index = self.discovery_part_map.get(row.index)
+            if part_index is None:
+                continue
+            bucket = part_names.setdefault(part_index, [])
+            if row.name not in bucket:
+                bucket.append(row.name)
+        names: dict[int, list[str]] = {}
+        for part_index, part in enumerate(self.parts):
+            try:
+                _step, slots = disev.validate_part(part, part_index)
+                if len(slots) != 1:
+                    continue
+                _condition_start, body_start = slots[0]
+                tokens = self._decode_body_tokens(
+                    part[body_start:], body_part_offset=body_start,
+                )
+            except (ValueError, struct.error):
+                continue
+            for token in tokens:
+                if token.get("kind") != kind or not isinstance(token.get("value"), int):
+                    continue
+                media_id = int(token["value"])
+                bucket = names.setdefault(media_id, [])
+                for name in part_names.get(part_index, ()):
+                    if name not in bucket:
+                        bucket.append(name)
+        result = {media_id: tuple(items) for media_id, items in names.items()}
+        self._script_media_name_cache[kind] = result
+        return result
+
+    @staticmethod
+    def _merge_media_name_maps(*maps: dict[int, tuple[str, ...]]) -> dict[int, tuple[str, ...]]:
+        merged: dict[int, list[str]] = {}
+        for source in maps:
+            for media_id, items in source.items():
+                bucket = merged.setdefault(media_id, [])
+                for item in items:
+                    if item not in bucket:
+                        bucket.append(item)
+        return {media_id: tuple(items) for media_id, items in merged.items()}
+
+    def _media_archive_part_count(self, archive_name: str) -> int:
+        try:
+            archive = (self._media_game_directory() / archive_name).read_bytes()
+            return len(disev.parse_archive(archive))
+        except (OSError, ValueError, struct.error):
+            return 0
+
+    @staticmethod
+    def _joined_media_names(names: tuple[str, ...]) -> str:
+        if len(names) <= 3:
+            return " / ".join(names)
+        return f"{' / '.join(names[:3])} 외 {len(names) - 3}개"
+
+    def _media_preview_choices(self, kind: str, *, current_id: int) -> tuple[str, ...]:
+        """명령별 실제 자산 범위와 발견물 이름으로 미디어 선택 목록을 만든다."""
+        labels: dict[int, str] = {}
+        if kind == "DSTILL 이미지 표시":
+            names = self._merge_media_name_maps(
+                self._media_discovery_names("still"), self._script_media_names(kind),
+            )
+            slot_count = self._media_archive_part_count("DSTILL.CDS") // 3
+            for media_id in range(slot_count):
+                suffix = self._joined_media_names(names.get(media_id, ()))
+                labels[media_id] = f"발견물 · {suffix}" if suffix else "DSTILL 이미지"
+        elif kind == "EVSTILL 이미지 표시":
+            names = self._script_media_names(kind)
+            slot_count = self._media_archive_part_count("EVSTILL.CDS") // 3
+            for media_id in range(slot_count):
+                scene = EVSTILL_SCENE_NAMES[media_id] if media_id < len(EVSTILL_SCENE_NAMES) else "이벤트 이미지"
+                suffix = self._joined_media_names(names.get(media_id, ()))
+                labels[media_id] = f"용도 · {scene}" + (f" · 사용: {suffix}" if suffix else "")
+        elif kind == "CG 애니메이션 재생":
+            names = self._merge_media_name_maps(
+                self._media_discovery_names("cg"), self._script_media_names(kind),
+            )
+            part_count = self._media_archive_part_count("DISCOVER.CDS")
+            for media_id in range(part_count):
+                suffix = self._joined_media_names(names.get(media_id, ()))
+                labels[media_id] = (
+                    f"DISCOVER.CDS 파트 {media_id:02d} · {suffix}"
+                    if suffix else f"DISCOVER.CDS 파트 {media_id:02d}"
+                )
+        elif kind == "AVI 재생":
+            names = self._merge_media_name_maps(
+                self._media_discovery_names("avi"), self._script_media_names(kind),
+            )
+            try:
+                files = (self._media_game_directory() / "AVI").glob("I*_0000.AVI")
+                media_ids = sorted({int(path.stem.split("_", 1)[0][1:]) for path in files})
+            except (OSError, ValueError):
+                media_ids = []
+            for media_id in media_ids:
+                suffix = self._joined_media_names(names.get(media_id, ()))
+                filename = f"I{media_id:02d}_0000.AVI"
+                labels[media_id] = f"{filename} · {suffix}" if suffix else filename
+        if current_id not in labels:
+            labels[current_id] = "파일 없음 · 기존 값"
+        return tuple(f"{media_id:03d} | {labels[media_id]}" for media_id in sorted(labels))
+
+    def _set_body_media(self, media_id: int, choices: tuple[str, ...] | None = None) -> None:
+        """미디어 콤보 표시와 파일에 기록할 숫자 ID를 함께 맞춘다."""
+        choices = choices or self._media_preview_choices(
+            self._builder_body_kind(), current_id=media_id,
+        )
+        prefix = f"{media_id:03d} |"
+        selection = next((choice for choice in choices if choice.startswith(prefix)), choices[0])
+        self.body_media_var.set(selection)
+        self.body_value_var.set(str(int(selection.partition("|")[0].strip(), 10)))
+
+    def _body_media_id(self) -> int:
+        """미디어 콤보박스에서 파일에 저장할 인덱스를 얻는다."""
+        selection = self.body_media_var.get().strip()
+        try:
+            media_id = int(selection.partition("|")[0].strip(), 10)
+        except ValueError as exc:
+            raise ValueError("목록에 있는 미디어를 선택하세요.") from exc
+        if not 0 <= media_id <= 0xFFFF:
+            raise ValueError("미디어 번호의 유효 범위는 0~65,535입니다.")
+        return media_id
+
+    def _body_media_selected(self, _event=None) -> None:
+        """콤보박스 선택을 원본 명령 값에 반영하고 이전 팝업을 닫는다."""
+        self._close_media_preview()
+        self.body_value_var.set(str(self._body_media_id()))
+
+    def _media_merged_palette(
+        self, local_palette: bytes, *, local_start: int = MEDIA_LOCAL_PALETTE_START,
+    ) -> list[int]:
+        """EXE 공통 팔레트와 미디어의 86색 로컬 팔레트를 합친다."""
+        if len(local_palette) != MEDIA_LOCAL_PALETTE_COLORS * 3:
+            raise ValueError("미디어의 로컬 팔레트 크기가 올바르지 않습니다.")
+        if not 0 <= local_start <= 256 - MEDIA_LOCAL_PALETTE_COLORS:
+            raise ValueError("미디어의 로컬 팔레트 시작 위치가 올바르지 않습니다.")
+        executable_path = self.exe_path
+        if executable_path is None or not executable_path.is_file():
+            candidate = self._media_game_directory() / "CDS_95.EXE"
+            executable_path = candidate if candidate.is_file() else None
+        if executable_path is None:
+            raise FileNotFoundError("공통 팔레트를 읽을 CDS_95.EXE를 찾을 수 없습니다.")
+        try:
+            executable = executable_path.read_bytes()
+            image_base, sections = parse_pe_sections(executable)
+            palette_offset = va_to_file_offset(MEDIA_COMMON_PALETTE_VA, image_base, sections)
+        except (OSError, ValueError, struct.error) as exc:
+            raise ValueError(f"CDS_95.EXE 공통 팔레트를 읽지 못했습니다: {exc}") from exc
+        common_size = MEDIA_COMMON_PALETTE_COLORS * 3
+        if palette_offset is None or palette_offset + common_size > len(executable):
+            raise ValueError("CDS_95.EXE 공통 팔레트의 범위가 올바르지 않습니다.")
+        common_palette = executable[palette_offset:palette_offset + common_size]
+        merged = [component for index in range(256) for component in (index, index, index)]
+        for index in range(MEDIA_COMMON_PALETTE_COLORS):
+            blue, red, green = common_palette[index * 3:index * 3 + 3]
+            target = (MEDIA_COMMON_PALETTE_START + index) * 3
+            merged[target:target + 3] = (red, green, blue)
+        for index in range(MEDIA_LOCAL_PALETTE_COLORS):
+            blue, red, green = local_palette[index * 3:index * 3 + 3]
+            target = (local_start + index) * 3
+            merged[target:target + 3] = (red, green, blue)
+        return merged
+
+    def _decode_still_preview(self, archive_name: str, image_slot: int) -> Image.Image:
+        """DSTILL/EVSTILL의 픽셀·팔레트·크기 3파트를 이미지로 복원한다."""
+        archive_path = self._media_game_directory() / archive_name
+        try:
+            archive = archive_path.read_bytes()
+            entries = disev.parse_archive(archive)
+        except (OSError, ValueError, struct.error) as exc:
+            raise ValueError(f"{archive_name}을 읽지 못했습니다: {exc}") from exc
+        base_part = image_slot * 3
+        if image_slot < 0 or base_part + 2 >= len(entries):
+            raise ValueError(f"{archive_name} 이미지 슬롯 {image_slot}번이 없습니다.")
+        dictionary = archive[0x10:0x110]
+        try:
+            pixels = disev.decode_part(archive, entries[base_part], dictionary)
+            local_palette = disev.decode_part(archive, entries[base_part + 1], dictionary)
+            size = disev.decode_part(archive, entries[base_part + 2], dictionary)
+        except (ValueError, struct.error) as exc:
+            raise ValueError(f"{archive_name} 이미지 슬롯 {image_slot}번을 해제하지 못했습니다.") from exc
+        if len(size) != 8:
+            raise ValueError(f"{archive_name} 이미지 슬롯 {image_slot}번의 크기 정보가 올바르지 않습니다.")
+        width, height = struct.unpack("<II", size)
+        if not width or not height or len(pixels) != width * height:
+            raise ValueError(f"{archive_name} 이미지 슬롯 {image_slot}번의 픽셀 크기가 올바르지 않습니다.")
+        image = Image.frombytes("P", (width, height), pixels)
+        image.putpalette(self._media_merged_palette(local_palette))
+        return image.convert("RGBA")
+
+    def _decode_cg_preview(self, animation_part: int) -> tuple[Image.Image, ...]:
+        """DISCOVER.CDS의 팔레트와 240×176 프레임을 복원한다."""
+        archive_path = self._media_game_directory() / "DISCOVER.CDS"
+        try:
+            archive = archive_path.read_bytes()
+            entries = disev.parse_archive(archive)
+        except (OSError, ValueError, struct.error) as exc:
+            raise ValueError(f"DISCOVER.CDS를 읽지 못했습니다: {exc}") from exc
+        if not 0 <= animation_part < len(entries):
+            raise ValueError(f"DISCOVER.CDS 애니메이션 파트 {animation_part}번이 없습니다.")
+        try:
+            payload = disev.decode_part(archive, entries[animation_part], archive[0x10:0x110])
+        except (ValueError, struct.error) as exc:
+            raise ValueError(
+                f"DISCOVER.CDS 애니메이션 파트 {animation_part}번을 해제하지 못했습니다."
+            ) from exc
+        palette_size = MEDIA_LOCAL_PALETTE_COLORS * 3
+        if len(payload) <= palette_size or (len(payload) - palette_size) % DISCOVER_FRAME_SIZE:
+            raise ValueError(
+                f"DISCOVER.CDS 애니메이션 파트 {animation_part}번의 프레임 구성이 올바르지 않습니다."
+            )
+        palette = self._media_merged_palette(payload[:palette_size])
+        frames = []
+        for offset in range(palette_size, len(payload), DISCOVER_FRAME_SIZE):
+            image = Image.frombytes("P", (240, 176), payload[offset:offset + DISCOVER_FRAME_SIZE])
+            image.putpalette(palette)
+            frames.append(image.convert("RGBA"))
+        return tuple(frames)
+
+    @staticmethod
+    def _evanime_palette(palette_data: bytes) -> list[int]:
+        """EVANIME의 가변 길이 B-R-G 팔레트를 Pillow RGB 팔레트로 바꾼다."""
+        if not palette_data or len(palette_data) % 3 or len(palette_data) > 256 * 3:
+            raise ValueError("EVANIME.CDS 팔레트 구성이 올바르지 않습니다.")
+        palette = [0] * (256 * 3)
+        for index in range(len(palette_data) // 3):
+            blue, red, green = palette_data[index * 3:index * 3 + 3]
+            palette[index * 3:index * 3 + 3] = (red, green, blue)
+        return palette
+
+    def _decode_evanime_strip(
+        self, archive: bytes, entries: list, dictionary: bytes,
+        pixel_part: int, palette_part: int, width: int, frame_height: int,
+    ) -> tuple[Image.Image, ...]:
+        """EVANIME 세로 스트립 한 파트를 투명 RGBA 프레임으로 분리한다."""
+        if max(pixel_part, palette_part) >= len(entries):
+            raise ValueError(
+                f"EVANIME.CDS에 필요한 파트 {pixel_part}/{palette_part}가 없습니다."
+            )
+        try:
+            pixels = disev.decode_part(archive, entries[pixel_part], dictionary)
+            palette_data = disev.decode_part(archive, entries[palette_part], dictionary)
+        except (ValueError, struct.error) as exc:
+            raise ValueError(
+                f"EVANIME.CDS 파트 {pixel_part}/{palette_part}를 해제하지 못했습니다."
+            ) from exc
+        frame_size = width * frame_height
+        if not frame_size or not pixels or len(pixels) % frame_size:
+            raise ValueError(
+                f"EVANIME.CDS 픽셀 파트 {pixel_part}의 프레임 구성이 올바르지 않습니다."
+            )
+        palette = self._evanime_palette(palette_data)
+        frames = []
+        for offset in range(0, len(pixels), frame_size):
+            frame_pixels = pixels[offset:offset + frame_size]
+            image = Image.frombytes("P", (width, frame_height), frame_pixels)
+            image.putpalette(palette)
+            # 모든 확인된 EVANIME 스트립에서 인덱스 0은 배경 투명색이다.
+            image.info["transparency"] = 0
+            frames.append(image.convert("RGBA"))
+        return tuple(frames)
+
+    @staticmethod
+    def _evanime_centered_frame(
+        size: tuple[int, int], *layers: tuple[Image.Image, int, int],
+    ) -> Image.Image:
+        """투명 스프라이트 계층을 어두운 미리보기 화면 중앙에 합성한다."""
+        frame = Image.new("RGBA", size, (5, 14, 24, 255))
+        for image, x, y in layers:
+            frame.alpha_composite(image, (x, y))
+        return frame
+
+    @staticmethod
+    def _evanime_scene_frame(*layers: tuple[Image.Image, int, int]) -> Image.Image:
+        """원본의 640픽셀 좌표계를 작은 특수 조우 미리보기 화면으로 축소한다."""
+        frame = Image.new("RGBA", SPECIAL_ENCOUNTER_SCENE_SIZE, (5, 14, 24, 255))
+        for image, x, y in layers:
+            # paste는 음수 좌표와 화면 밖 영역을 자동으로 잘라 주므로 원본의
+            # 화면 진입·이탈 좌표를 그대로 사용할 수 있다.
+            frame.paste(image, (round(x), round(y)), image)
+        return frame.resize(SPECIAL_ENCOUNTER_PREVIEW_SIZE, Image.Resampling.NEAREST)
+
+    def _decode_special_encounter_preview(self, encounter_value: int) -> tuple[Image.Image, ...]:
+        """00 1E의 스크립트 값을 EVANIME 애니메이션 프레임으로 복원한다."""
+        specs = SPECIAL_ENCOUNTER_EVANIME_PARTS.get(encounter_value)
+        if specs is None:
+            raise ValueError(f"지원하지 않는 특수 조우 값입니다: {encounter_value}")
+        archive_path = self._media_game_directory() / "EVANIME.CDS"
+        try:
+            archive = archive_path.read_bytes()
+            entries = disev.parse_archive(archive)
+        except (OSError, ValueError, struct.error) as exc:
+            raise ValueError(f"EVANIME.CDS를 읽지 못했습니다: {exc}") from exc
+        dictionary = archive[0x10:0x110]
+        strips = tuple(
+            self._decode_evanime_strip(
+                archive, entries, dictionary, pixel_part, palette_part, width, frame_height,
+            )
+            for pixel_part, palette_part, width, frame_height in specs
+        )
+        screen_width, screen_height = SPECIAL_ENCOUNTER_SCENE_SIZE
+        reference_ship_y = SPECIAL_ENCOUNTER_REFERENCE_SHIP[1]
+
+        def cdiv(numerator: int, denominator: int) -> int:
+            """x86 IDIV와 같이 0 방향으로 버리는 정수 나눗셈이다."""
+            quotient = abs(numerator) // abs(denominator)
+            return -quotient if (numerator < 0) != (denominator < 0) else quotient
+
+        if encounter_value == 0:
+            # 0x418750: 백경 22프레임을 구간별로 왕복시키며 왼쪽으로 이동한다.
+            whale = strips[0]
+            frames = []
+            x = screen_width - 480
+            y = screen_height // 2 - 96 if reference_ship_y > screen_height // 2 else screen_height // 2
+            for tick in range(64):
+                if tick < 18:
+                    index = tick // 2
+                elif tick < 26:
+                    frames.append(self._evanime_scene_frame())
+                    x += cdiv(480 - screen_width, 50)
+                    continue
+                elif tick < 32:
+                    index = 8 - (tick - 26) // 2
+                elif tick < 44:
+                    index = 9 + (tick - 32) // 2
+                elif tick < 54:
+                    index = 15 if (tick - 40) % 4 < 2 else 16
+                else:
+                    index = 17 + (tick - 54) // 2
+                frames.append(self._evanime_scene_frame((whale[index], x, y)))
+                if tick < 32:
+                    x += cdiv(480 - screen_width, 80)
+                elif tick < 54:
+                    x += cdiv(480 - screen_width, 50)
+            return tuple(frames)
+
+        if encounter_value == 1:
+            # 0x418AB0: 작은 도약 돌고래(23)가 끝난 뒤 돌고래 떼(22)가 이어진다.
+            school, jumper = strips
+            frames = []
+            jumper_x = (screen_width - 128) // 2
+            school_x = screen_width // 2
+            if reference_ship_y >= screen_height // 2:
+                jumper_y = school_y = screen_height // 2 - 160
+            else:
+                jumper_y = screen_height // 2 - 80
+                school_y = screen_height // 2 - 32
+            for tick in range(86):
+                if tick < 50:
+                    if tick < 4:
+                        index = tick // 2
+                    elif tick < 20:
+                        index = (2, 3, 4, 3)[((tick - 4) // 2) % 4]
+                    elif tick < 32:
+                        index = 5 + ((tick - 20) // 2) % 2
+                    elif tick < 44:
+                        index = 7 + ((tick - 32) // 2) % 2
+                    else:
+                        index = 9 + (tick - 44) // 2
+                    frames.append(self._evanime_scene_frame((jumper[index], jumper_x, jumper_y)))
+                elif tick < 54:
+                    # 원본이 범위 밖 소스 행을 요청하는 전환 구간은 빈 화면으로 보존한다.
+                    frames.append(self._evanime_scene_frame())
+                else:
+                    age = tick - 54
+                    index = age % 7 if tick < 82 else 11 + tick - 82
+                    frames.append(self._evanime_scene_frame((school[index], school_x, school_y)))
+                    school_x += cdiv(screen_width, -90)
+            return tuple(frames)
+
+        if encounter_value == 2:
+            # 0x418EA0: 같은 47프레임 날치 떼를 두 번 사용하고 두 번째는 21틱 늦춘다.
+            flying_fish = strips[0]
+
+            def flying_fish_index(age: int) -> int:
+                if age < 12:
+                    return age + 24
+                if age < 36:
+                    return age - 12
+                return age
+
+            frames = []
+            first_x = screen_width - 336
+            first_y = screen_height // 2 - 150 if reference_ship_y > screen_height // 2 else screen_height // 2
+            second_x, second_y = first_x - 100, first_y + 80
+            for tick in range(68):
+                layers = []
+                if tick < 47:
+                    layers.append((flying_fish[flying_fish_index(tick)], first_x, first_y))
+                    first_x += cdiv(screen_width, -100)
+                second_age = tick - 21
+                if 0 <= second_age < 47:
+                    layers.append((
+                        flying_fish[flying_fish_index(second_age)],
+                        second_x,
+                        second_y,
+                    ))
+                    second_x += cdiv(screen_width, -150)
+                frames.append(self._evanime_scene_frame(*layers))
+            return tuple(frames)
+
+        if encounter_value == 3:
+            # 0x498840/0x498A20: 작은 유령선과 3프레임 안개 네 장이
+            # 양쪽 화면 밖에서 서로 다른 속도로 진입한다.
+            ghost_ship, mist = strips
+            frames = []
+            mist_x = [-384, -576, screen_width, screen_width + 192]
+            # 원본은 각각 rand(16)을 사용한다. 미리보기에서는 중앙값 8로 고정한다.
+            mist_y = [-8, 56, screen_height - 120, screen_height - 184]
+            ship_x = screen_width + cdiv(screen_width, -50)
+            ship_y = screen_height // 2 - 32 if reference_ship_y >= screen_height // 2 else screen_height // 2
+            for tick in range(65):
+                state = tick + 1
+                layers = []
+                if 4 <= tick < 61:
+                    layers.extend(
+                        (mist[(state + offset) % 3], mist_x[offset], mist_y[offset])
+                        for offset in range(4)
+                    )
+                if 4 <= tick < 61 and state >= 10:
+                    if state < 12:
+                        ship_index = 8
+                    elif state < 14:
+                        ship_index = 7
+                    elif state < 16:
+                        ship_index = 6
+                    elif state < 18:
+                        ship_index = 5
+                    elif state < 20:
+                        ship_index = 3
+                    elif state < 50:
+                        ship_index = (0, 0, 1, 1, 2, 2, 1, 1)[state % 8]
+                    else:
+                        ship_index = min(8, 3 + (state - 50) // 2)
+                    layers.append((ghost_ship[ship_index], ship_x, ship_y))
+                frames.append(self._evanime_scene_frame(*layers))
+                if state >= 10:
+                    ship_x += cdiv(screen_width, -50)
+                base_speed = cdiv(screen_width, 50)
+                speeds = (base_speed * 3, base_speed, -base_speed * 4, -base_speed * 2)
+                for offset, speed in enumerate(speeds):
+                    mist_x[offset] += speed
+                    if offset < 2 and mist_x[offset] >= screen_width:
+                        mist_x[offset] = (-2 - offset) * 192
+                        mist_y[offset] = offset * 64 - 8
+                    elif offset >= 2 and mist_x[offset] < -384:
+                        mist_x[offset] = screen_width + (offset - 2) * 192
+                        mist_y[offset] = screen_height - offset * 64 + 8
+            return tuple(frames)
+
+        if encounter_value == 4:
+            # 0x498FF0: 22장 스트립을 여러 구간에서 앞뒤로 왕복한다.
+            aurora = strips[0]
+            frames = []
+            for tick in range(73):
+                if tick < 4 or tick >= 69:
+                    frames.append(self._evanime_scene_frame())
+                elif tick < 10:
+                    index = 0
+                    frames.append(self._evanime_scene_frame((aurora[index], 0, 0)))
+                elif tick < 23:
+                    index = tick - 9
+                    frames.append(self._evanime_scene_frame((aurora[index], 0, 0)))
+                elif tick < 30:
+                    index = 36 - tick
+                    frames.append(self._evanime_scene_frame((aurora[index], 0, 0)))
+                elif tick < 43:
+                    index = tick - 23
+                    frames.append(self._evanime_scene_frame((aurora[index], 0, 0)))
+                elif tick < 48:
+                    index = 62 - tick
+                    frames.append(self._evanime_scene_frame((aurora[index], 0, 0)))
+                elif tick < 55:
+                    index = tick - 33
+                    frames.append(self._evanime_scene_frame((aurora[index], 0, 0)))
+                elif tick < 59:
+                    index = 76 - tick
+                    frames.append(self._evanime_scene_frame((aurora[index], 0, 0)))
+                elif tick < 63:
+                    index = tick - 41
+                    frames.append(self._evanime_scene_frame((aurora[index], 0, 0)))
+                else:
+                    frames.append(self._evanime_scene_frame((aurora[0], 0, 0)))
+            return tuple(frames)
+
+        if encounter_value == 5:
+            # 0x419130/0x4192F0/0x419400/0x419470의 좌표 갱신식을
+            # 원본 최소 해상도 좌표계에 그대로 적용한다.
+            single, medium, large = strips
+            frames = []
+            horizontal_step = cdiv(screen_width, 40)
+            single_x = horizontal_step * 41
+            single_y, single_state = screen_height - 80, 0
+            medium_x = screen_width + cdiv(screen_width, -10)
+            medium_y = -19
+            large_step = cdiv(cdiv(screen_width * 4, 5), 50)
+            large_x = large_step * 50
+            large_y = cdiv(screen_height * 5, 8)
+            tick = 0
+            while True:
+                layers = []
+                layers.append((large[tick % 9], large_x, large_y))
+                if tick >= 6:
+                    layers.append((medium[tick % 9], medium_x, medium_y))
+                if tick >= 16:
+                    if single_state < 4:
+                        single_index = single_state
+                    elif single_state < 7:
+                        single_index = 4
+                    elif single_state < 9:
+                        single_index = single_state - 4
+                    else:
+                        single_index = 1
+                    layers.append((single[single_index], single_x, single_y))
+                frames.append(self._evanime_scene_frame(*layers))
+
+                large_x -= large_step
+                large_phase = cdiv(large_x, large_step)
+                large_curve = cdiv(cdiv(screen_height, 2) * large_phase * large_phase, 2500)
+                if large_phase >= 0 and large_curve > 0:
+                    large_y = cdiv(screen_height, 8) + large_curve
+                else:
+                    large_y -= 1
+
+                if tick >= 6:
+                    medium_x += cdiv(screen_width, -40)
+                    vertical_step = cdiv(screen_height, 50)
+                    if medium_x >= cdiv(screen_width * 2, 3):
+                        medium_y += vertical_step - 2
+                    elif medium_x >= cdiv(screen_width, 3):
+                        medium_y += vertical_step - 4
+                    else:
+                        medium_y += vertical_step - 5
+
+                if tick >= 16:
+                    single_x -= horizontal_step
+                    if single_x > cdiv(screen_width, 2):
+                        distance = cdiv(screen_width - single_x, horizontal_step)
+                        slope = cdiv(80 - cdiv(screen_height * 3, 4), 19)
+                        single_y = screen_height - 80 + slope * distance
+                    elif single_x > cdiv(screen_width, 4):
+                        distance = cdiv(single_x - cdiv(screen_width, 4), horizontal_step)
+                        single_y = (
+                            cdiv(screen_height, 8)
+                            + cdiv(distance * distance * cdiv(screen_height, 8), 100)
+                        )
+                    elif single_x >= cdiv(screen_width, 8):
+                        distance = cdiv(cdiv(screen_width, 4) - single_x, horizontal_step)
+                        single_y = (
+                            cdiv(screen_height, 8)
+                            + cdiv(distance * distance * cdiv(screen_height, 8), 100)
+                        )
+                    else:
+                        single_y += cdiv(horizontal_step, 2)
+                    single_state = 0 if single_state >= 10 else single_state + 1
+                tick += 1
+                single_off = single_x + 208 < 0 or single_y + 160 < 0
+                medium_off = medium_x + 288 < 0 or medium_y + 192 < 0
+                large_off = large_x + 384 < 0 or large_y + 288 < 0
+                if tick >= 16 and single_off and medium_off and large_off:
+                    break
+                if tick >= 160:  # 손상된 해상도 값에서도 미리보기가 무한 생성되지 않게 한다.
+                    break
+            return tuple(frames)
+
+        if encounter_value == 6:
+            # 0x419670과 0x4198B0~0x419D15의 네 이동식을 그대로 옮긴다.
+            small, medium, large = strips
+            wing_cycle = (0, 1, 2, 1)
+            frames = []
+            small_a_x = cdiv(screen_width, 40) * 41
+            small_a_y = cdiv(screen_height, 2)
+            small_b_x = cdiv(screen_width - 128, 2)
+            small_b_y = cdiv(screen_height, 40) * 41
+            medium_x = cdiv(screen_width - 128, 40) * 41
+            medium_y = screen_height + 51
+            large_x, large_y = screen_width - 35, screen_height - 35
+            tick = 0
+            while True:
+                layers = []
+                layers.append((large[wing_cycle[tick % 4]], large_x, large_y))
+                if tick >= 30:
+                    layers.append((medium[wing_cycle[tick % 4]], medium_x, medium_y))
+                if tick >= 15:
+                    layers.append((small[wing_cycle[tick % 4]], small_a_x, small_a_y))
+                if tick >= 20:
+                    layers.append((small[wing_cycle[(tick + 1) % 4]], small_b_x, small_b_y))
+                frames.append(self._evanime_scene_frame(*layers))
+
+                large_x += cdiv(cdiv(screen_width, -40) * 7, 10)
+                if large_x >= cdiv(screen_width * 3, 4):
+                    large_y += cdiv(screen_height, -50)
+                elif large_x >= cdiv(screen_width, 2):
+                    large_y += cdiv(screen_height, -60)
+                elif large_x >= cdiv(screen_width, 4):
+                    large_y += cdiv(screen_height, -65)
+                else:
+                    large_y += cdiv(screen_height, -70)
+
+                if tick >= 30:
+                    medium_step = cdiv(screen_width - 128, 30)
+                    medium_x -= medium_step
+                    medium_pivot = medium_step * 15
+                    if medium_x >= medium_pivot:
+                        phase = cdiv(medium_x - medium_pivot, medium_step)
+                        medium_y = (
+                            cdiv(screen_height, 2)
+                            + cdiv(cdiv(screen_height, 30) * phase * phase, 15)
+                        )
+                    elif medium_x >= 5:
+                        phase = cdiv(medium_pivot - medium_x, medium_step)
+                        medium_y = (
+                            cdiv(screen_height, 2)
+                            + cdiv(cdiv(screen_height, -30) * phase * phase, 15)
+                        )
+                    else:
+                        medium_y += cdiv(screen_height, -20)
+                        medium_x += cdiv(medium_step, 2)
+
+                if tick >= 15:
+                    small_step = cdiv(screen_width, 40)
+                    small_a_x -= small_step
+                    if small_a_x >= cdiv(screen_width * 3, 4):
+                        phase = cdiv(small_a_x - cdiv(screen_width * 3, 4), small_step)
+                        small_a_y = (
+                            cdiv(screen_height * 3, 8)
+                            + cdiv(cdiv(screen_height, 8) * phase * phase, 100)
+                        )
+                    elif small_a_x >= cdiv(screen_width, 2):
+                        phase = cdiv(cdiv(screen_width * 3, 4) - small_a_x, small_step)
+                        small_a_y = (
+                            cdiv(screen_height * 3, 8)
+                            + cdiv(cdiv(screen_height, 8) * phase * phase, 100)
+                        )
+                    elif small_a_x >= cdiv(screen_width, 4):
+                        phase = cdiv(small_a_x - cdiv(screen_width, 4), small_step)
+                        small_a_y = (
+                            cdiv(screen_height * 5, 8)
+                            + cdiv(cdiv(screen_height, 8) * phase * phase, -100)
+                        )
+                    elif small_a_x >= 0:
+                        phase = 10 - cdiv(small_a_x, small_step)
+                        small_a_y = (
+                            cdiv(screen_height * 5, 8)
+                            + cdiv(cdiv(screen_height, 8) * phase * phase, -100)
+                        )
+                    else:
+                        phase = cdiv(small_a_x, small_step) + 10
+                        small_a_y = (
+                            cdiv(screen_height * 3, 8)
+                            + cdiv(cdiv(screen_height, 8) * phase * phase, 100)
+                        )
+
+                if tick >= 20:
+                    small_b_step = cdiv(screen_height, 40)
+                    small_b_y -= small_b_step
+                    if small_b_y >= cdiv(screen_height * 3, 4):
+                        small_b_x += cdiv(screen_width, -80)
+                    elif small_b_y >= cdiv(screen_height, 2):
+                        phase = cdiv(
+                            small_b_y - cdiv(screen_height, 2), small_b_step,
+                        )
+                        half_width = cdiv(screen_width, 2)
+                        small_b_x = (
+                            cdiv((half_width - 128) * phase * phase, cdiv(screen_height, 2))
+                            + cdiv((128 - half_width) * 100, cdiv(screen_height, 2))
+                            + cdiv(screen_width - 128, 2)
+                            - cdiv(screen_width, 8)
+                        )
+                    elif small_b_y < cdiv(screen_height, 4):
+                        if small_b_y < 0:
+                            small_b_x += cdiv(screen_width, 80)
+                        else:
+                            phase = cdiv(
+                                cdiv(screen_height, 4) - small_b_y, small_b_step,
+                            )
+                            half_width = cdiv(screen_width, 2)
+                            curve = cdiv(
+                                (half_width - 128) * phase * phase,
+                                cdiv(screen_height, 2),
+                            )
+                            small_b_x = (
+                                cdiv(curve, 2)
+                                + cdiv((128 - half_width) * 100, cdiv(screen_height, 2))
+                                + cdiv(screen_width - 128, 2)
+                                - cdiv(screen_width, 8)
+                            )
+
+                tick += 1
+                small_a_off = small_a_x + 128 < 0 or small_a_y + 128 < 0
+                small_b_off = small_b_x + 128 < 0 or small_b_y + 128 < 0
+                medium_off = medium_x + 256 < 0 or medium_y + 256 < 0
+                large_off = large_x + 352 < 0 or large_y + 352 < 0
+                if tick >= 30 and small_a_off and small_b_off and medium_off and large_off:
+                    break
+                if tick >= 240:
+                    break
+            return tuple(frames)
+
+        if encounter_value == 7:
+            # 0x499890: 빙산 위 펭귄이 이동한 뒤 뛰어들어 물보라를 만든다.
+            # 원작은 선박의 화면 좌표에 맞추지만, 선박을 함께 표시하지 않는
+            # 편집기 미리보기에서는 충돌한 빙산 전체가 화면 중앙에 오게 한다.
+            iceberg, penguin = strips
+            frames = []
+            # 충돌 뒤 고정되는 3번 프레임의 투명 여백을 제외하고 시각적
+            # 중심을 계산해야 실제 빙산 그림이 팝업 정중앙에 놓인다.
+            visible_bounds = iceberg[3].getbbox() or (0, 0, iceberg[3].width, iceberg[3].height)
+            visible_center_x = (visible_bounds[0] + visible_bounds[2]) // 2
+            visible_center_y = (visible_bounds[1] + visible_bounds[3]) // 2
+            ice_target_x = screen_width // 2 - visible_center_x
+            ice_x = screen_width - 19
+            ice_y = screen_height // 2 - visible_center_y
+            penguin_x, penguin_y = ice_x + 100, ice_y + 16
+            collision_tick = None
+            tick = 0
+            while True:
+                if collision_tick is None and ice_x <= ice_target_x:
+                    collision_tick = tick
+                    ice_x = ice_target_x
+                if collision_tick is None:
+                    ice_index = (0, 0, 1, 1, 2, 2, 1, 1)[tick % 8]
+                else:
+                    collision_age = tick - collision_tick
+                    ice_index = 3
+                layers = [(iceberg[ice_index], ice_x, ice_y)]
+                if collision_tick is None:
+                    penguin_index = (0, 1, 2, 1)[tick % 4]
+                else:
+                    age = tick - collision_tick
+                    if age < 2:
+                        penguin_index = 0
+                    elif age < 4:
+                        penguin_index = 3
+                    elif age < 10:
+                        penguin_index = 4
+                    elif age < 16:
+                        penguin_index = 5 + (age - 10) // 2
+                    else:
+                        penguin_index = -1
+                    if age < 2:
+                        penguin_x, penguin_y = ice_x + 100, ice_y + 16
+                    elif age < 4:
+                        penguin_x, penguin_y = ice_x + 102, ice_y + 16
+                    elif age < 6:
+                        penguin_x, penguin_y = ice_x + 108, ice_y + 8
+                    elif age < 8:
+                        penguin_x, penguin_y = ice_x + 128, ice_y + 12
+                    elif age < 10:
+                        penguin_x, penguin_y = ice_x + 150, ice_y + 34
+                    else:
+                        penguin_x, penguin_y = ice_x + 158, ice_y + 56
+                if penguin_index >= 0:
+                    layers.append((penguin[penguin_index], penguin_x, penguin_y))
+                frames.append(self._evanime_scene_frame(*layers))
+                if collision_tick is None:
+                    ice_x += cdiv(screen_width, -40)
+                    penguin_x = ice_x + 100
+                else:
+                    age = tick - collision_tick
+                    if age < 6:
+                        ice_x += -4 if age % 2 == 0 else 4
+                    if age >= 20:
+                        break
+                tick += 1
+            return tuple(frames)
+
+        raise ValueError(f"지원하지 않는 특수 조우 값입니다: {encounter_value}")
+
+    def _decode_fighter_background(self, set_id: int) -> Image.Image:
+        """FIGHTER.CDS의 일기토 연출 세트 배경과 전용 팔레트를 복원한다."""
+        if not 0 <= set_id < FIGHTER_BACKGROUND_SET_COUNT:
+            raise ValueError(
+                f"일기토 연출 세트의 유효 범위는 0~{FIGHTER_BACKGROUND_SET_COUNT - 1}입니다."
+            )
+        archive_path = self._media_game_directory() / "FIGHTER.CDS"
+        try:
+            archive = archive_path.read_bytes()
+            entries = disev.parse_archive(archive)
+        except (OSError, ValueError, struct.error) as exc:
+            raise ValueError(f"FIGHTER.CDS를 읽지 못했습니다: {exc}") from exc
+
+        pixel_part = FIGHTER_BACKGROUND_FIRST_PART + set_id * 2
+        palette_part = pixel_part + 1
+        if palette_part >= len(entries):
+            raise ValueError(f"FIGHTER.CDS에 일기토 연출 세트 {set_id}번이 없습니다.")
+        dictionary = archive[0x10:0x110]
+        try:
+            pixels = disev.decode_part(archive, entries[pixel_part], dictionary)
+            palette_data = disev.decode_part(archive, entries[palette_part], dictionary)
+        except (ValueError, struct.error) as exc:
+            raise ValueError(
+                f"FIGHTER.CDS 일기토 연출 세트 {set_id}번을 해제하지 못했습니다."
+            ) from exc
+
+        expected_pixels = FIGHTER_BACKGROUND_WIDTH * FIGHTER_BACKGROUND_HEIGHT
+        if len(pixels) != expected_pixels:
+            raise ValueError(
+                f"FIGHTER.CDS 일기토 연출 세트 {set_id}번의 픽셀 크기가 올바르지 않습니다."
+            )
+        palette_size = MEDIA_LOCAL_PALETTE_COLORS * 3
+        if len(palette_data) < palette_size:
+            raise ValueError(
+                f"FIGHTER.CDS 일기토 연출 세트 {set_id}번의 팔레트 크기가 올바르지 않습니다."
+            )
+
+        palette = self._media_merged_palette(
+            palette_data[:palette_size], local_start=FIGHTER_LOCAL_PALETTE_START,
+        )
+        image = Image.frombytes(
+            "P", (FIGHTER_BACKGROUND_WIDTH, FIGHTER_BACKGROUND_HEIGHT), pixels,
+        )
+        image.putpalette(palette)
+        return image.convert("RGBA")
+
+    def _decode_land_battlefield_preview(self, battlefield_name: str) -> Image.Image:
+        """LANDDATA.CDS의 육상전 전장 한 장을 전용 팔레트로 복원한다."""
+        part_index = LAND_BATTLEFIELD_PART_BY_NAME.get(battlefield_name)
+        if part_index is None:
+            raise ValueError("목록에서 미리 볼 육상전 전장을 선택하세요.")
+        archive_path = self._media_game_directory() / "LANDDATA.CDS"
+        try:
+            archive = archive_path.read_bytes()
+            entries = disev.parse_archive(archive)
+        except (OSError, ValueError, struct.error) as exc:
+            raise ValueError(f"LANDDATA.CDS를 읽지 못했습니다: {exc}") from exc
+        if part_index >= len(entries) or LAND_BATTLEFIELD_PALETTE_PART >= len(entries):
+            raise ValueError(f"LANDDATA.CDS에 {battlefield_name} 전장 자산이 없습니다.")
+        dictionary = archive[0x10:0x110]
+        try:
+            pixels = disev.decode_part(archive, entries[part_index], dictionary)
+            palette_data = disev.decode_part(
+                archive, entries[LAND_BATTLEFIELD_PALETTE_PART], dictionary,
+            )
+        except (ValueError, struct.error) as exc:
+            raise ValueError(
+                f"LANDDATA.CDS의 {battlefield_name} 전장을 해제하지 못했습니다."
+            ) from exc
+
+        expected_pixels = LAND_BATTLEFIELD_WIDTH * LAND_BATTLEFIELD_HEIGHT
+        if len(pixels) != expected_pixels:
+            raise ValueError(
+                f"LANDDATA.CDS의 {battlefield_name} 전장 픽셀 크기가 올바르지 않습니다."
+            )
+        palette_size = MEDIA_LOCAL_PALETTE_COLORS * 3
+        if len(palette_data) != palette_size:
+            raise ValueError("LANDDATA.CDS의 전장 팔레트 크기가 올바르지 않습니다.")
+        palette = [0] * (256 * 3)
+        for index in range(MEDIA_LOCAL_PALETTE_COLORS):
+            blue, red, green = palette_data[index * 3:index * 3 + 3]
+            palette[index * 3:index * 3 + 3] = (red, green, blue)
+        image = Image.frombytes(
+            "P", (LAND_BATTLEFIELD_WIDTH, LAND_BATTLEFIELD_HEIGHT), pixels,
+        )
+        image.putpalette(palette)
+        return image.convert("RGBA")
+
+    def _media_preview_value(self) -> int:
+        return self._body_media_id()
+
+    def _new_media_preview_window(self, title: str) -> tk.Toplevel:
+        window = tk.Toplevel(self.root)
+        window.withdraw()
+        window.title(title)
+        window.transient(self.root)
+        window.resizable(False, False)
+        window.protocol("WM_DELETE_WINDOW", self._close_media_preview)
+        self._media_preview_window = window
+        return window
+
+    def _show_image_preview(self, image: Image.Image, title: str) -> None:
+        window = self._new_media_preview_window(title)
+        photo = ImageTk.PhotoImage(image, master=window)
+        label = tk.Label(window, image=photo, background="black", borderwidth=0)
+        label.pack()
+        self._media_preview_image = photo
+        self._media_preview_label = label
+        self._show_media_preview_window(window)
+
+    def _show_animation_preview(
+        self, images: tuple[Image.Image, ...], title: str, *, frame_interval_ms: int = 80,
+        loop: bool = True,
+    ) -> None:
+        if not images:
+            raise ValueError("표시할 애니메이션 프레임이 없습니다.")
+        window = self._new_media_preview_window(title)
+        self._media_preview_frames = tuple(ImageTk.PhotoImage(image, master=window) for image in images)
+        self._media_preview_frame_index = 0
+        self._media_preview_frame_interval_ms = frame_interval_ms
+        self._media_preview_loop = loop
+        self._media_preview_label = tk.Label(window, background="black", borderwidth=0)
+        self._media_preview_label.pack()
+        self._render_media_preview_frame()
+        self._show_media_preview_window(window)
+
+    def _render_media_preview_frame(self) -> None:
+        window = self._media_preview_window
+        label = self._media_preview_label
+        if window is None or label is None or not self._media_preview_frames:
+            return
+        try:
+            if not window.winfo_exists():
+                return
+            frame = self._media_preview_frames[self._media_preview_frame_index]
+            label.configure(image=frame)
+            if self._media_preview_frame_index + 1 >= len(self._media_preview_frames):
+                if not self._media_preview_loop:
+                    self._media_preview_after = None
+                    return
+                self._media_preview_frame_index = 0
+            else:
+                self._media_preview_frame_index += 1
+            self._media_preview_after = window.after(
+                self._media_preview_frame_interval_ms, self._render_media_preview_frame,
+            )
+        except tk.TclError:
+            self._close_media_preview()
+
+    def _show_avi_preview(self, avi_id: int, title: str) -> None:
+        source = self._media_game_directory() / "AVI" / f"I{avi_id:02d}_0000.AVI"
+        if not source.is_file():
+            raise FileNotFoundError(f"AVI 파일을 찾을 수 없습니다.\n{source}")
+        if imageio_ffmpeg is None:
+            raise RuntimeError("AVI 미리보기에 필요한 FFmpeg 구성 요소를 찾을 수 없습니다.")
+        reader = None
+        try:
+            reader = imageio_ffmpeg.read_frames(str(source), pix_fmt="rgb24")
+            metadata = next(reader)
+            width, height = metadata.get("size", (0, 0))
+            fps = float(metadata.get("fps", 0))
+            if width <= 0 or height <= 0 or fps <= 0:
+                raise ValueError("AVI 영상의 크기 또는 프레임 속도를 읽지 못했습니다.")
+            frame_size = width * height * 3
+            images = []
+            for frame_data in reader:
+                if len(frame_data) != frame_size:
+                    raise ValueError("AVI 영상의 프레임 크기가 올바르지 않습니다.")
+                images.append(Image.frombytes("RGB", (width, height), frame_data).convert("RGBA"))
+        except (OSError, RuntimeError, StopIteration, ValueError) as exc:
+            raise ValueError(f"AVI 영상을 해석하지 못했습니다: {exc}") from exc
+        finally:
+            if reader is not None:
+                reader.close()
+        self._show_animation_preview(
+            tuple(images), title, frame_interval_ms=max(1, round(1000 / fps)),
+        )
+
+    def _show_media_preview_window(self, window: tk.Toplevel) -> None:
+        self._center_popup(window)
+        window.deiconify()
+        window.lift()
+        window.focus_set()
+
+    def _show_media_preview(self) -> None:
+        """현재 미디어 명령의 이미지나 영상을 별도 창에 표시한다."""
+        kind = self._builder_body_kind()
+        if kind not in MEDIA_PREVIEW_KINDS:
+            return
+        self._close_media_preview()
+        try:
+            media_id = self._media_preview_value()
+            title = f"미디어 미리보기 - {kind} {media_id}"
+            if kind == "DSTILL 이미지 표시":
+                self._show_image_preview(self._decode_still_preview("DSTILL.CDS", media_id), title)
+            elif kind == "EVSTILL 이미지 표시":
+                self._show_image_preview(self._decode_still_preview("EVSTILL.CDS", media_id), title)
+            elif kind == "CG 애니메이션 재생":
+                self._show_animation_preview(self._decode_cg_preview(media_id), title)
+            else:
+                self._show_avi_preview(media_id, title)
+        except (OSError, RuntimeError, ValueError, struct.error, tk.TclError) as exc:
+            self._close_media_preview()
+            messagebox.showerror("미디어 미리보기", str(exc), parent=self.root)
+
+    def _show_special_encounter_preview(self) -> None:
+        """선택한 00 1E 특수 조우의 EVANIME 연출을 팝업에서 재생한다."""
+        self._close_media_preview()
+        try:
+            encounter_name = self.body_detail_var.get()
+            encounter_value = SPECIAL_ENCOUNTER_VALUE_BY_SUBKIND.get(encounter_name)
+            if encounter_value is None:
+                try:
+                    original_value = int(self.body_value_var.get().strip(), 10)
+                except ValueError as exc:
+                    raise ValueError("목록에 있는 특수 조우를 선택하세요.") from exc
+                # 원본 값 8은 게임에서도 값 7과 같은 내부 유빙 연출 ID 14를 쓴다.
+                encounter_value = 7 if original_value == 8 else original_value
+                if encounter_value not in SPECIAL_ENCOUNTER_EVANIME_PARTS:
+                    raise ValueError(f"지원하지 않는 특수 조우 값입니다: {original_value}")
+            self._show_animation_preview(
+                self._decode_special_encounter_preview(encounter_value),
+                f"특수 조우 미리보기 - {encounter_name}",
+                frame_interval_ms=SPECIAL_ENCOUNTER_FRAME_INTERVAL_MS,
+                loop=True,
+            )
+        except (OSError, RuntimeError, ValueError, struct.error, tk.TclError) as exc:
+            self._close_media_preview()
+            messagebox.showerror("특수 조우 미리보기", str(exc), parent=self.root)
+
+    def _show_fighter_background_preview(self) -> None:
+        """선택한 일기토 연출 세트의 FIGHTER.CDS 배경을 팝업에 표시한다."""
+        self._close_media_preview()
+        try:
+            set_id = int(self.body_value_var.get().strip(), 10)
+            self._show_image_preview(
+                self._decode_fighter_background(set_id),
+                f"일기토 배경 미리보기 - 세트 {set_id}",
+            )
+        except (OSError, RuntimeError, ValueError, struct.error, tk.TclError) as exc:
+            self._close_media_preview()
+            messagebox.showerror("일기토 배경 미리보기", str(exc), parent=self.root)
+
+    def _show_land_battlefield_preview(self) -> None:
+        """별도 미리보기 목록에서 선택한 육상전 전장을 팝업에 표시한다."""
+        self._close_media_preview()
+        try:
+            battlefield_name = self.body_battlefield_preview_var.get()
+            self._show_image_preview(
+                self._decode_land_battlefield_preview(battlefield_name),
+                f"육상전 전장 미리보기 - {battlefield_name}",
+            )
+        except (OSError, RuntimeError, ValueError, struct.error, tk.TclError) as exc:
+            self._close_media_preview()
+            messagebox.showerror("육상전 전장 미리보기", str(exc), parent=self.root)
+
+    def _close_media_preview(self) -> None:
+        """팝업의 이미지·애니메이션·AVI 재생 상태를 모두 해제한다."""
+        window = self._media_preview_window
+        if self._media_preview_after is not None:
+            try:
+                if window is not None:
+                    window.after_cancel(self._media_preview_after)
+                else:
+                    self.root.after_cancel(self._media_preview_after)
+            except tk.TclError:
+                pass
+            self._media_preview_after = None
+        self._media_preview_frames = ()
+        self._media_preview_frame_index = 0
+        self._media_preview_frame_interval_ms = 80
+        self._media_preview_loop = True
+        self._media_preview_image = None
+        self._media_preview_label = None
+        self._media_preview_window = None
+        if window is not None:
+            try:
+                if window.winfo_exists():
+                    window.destroy()
+            except tk.TclError:
+                pass
 
     def _hide_disabled_body_inputs(self) -> None:
         """Do not leave inapplicable command inputs as greyed-out placeholders."""
@@ -3477,6 +5033,14 @@ class DisevEditor:
                 return
         self.body_character_var.set(str(character_id))
 
+    def _naval_battle_targets(self) -> list[tuple[int, str]]:
+        """Return the EXE character-table rows valid as scripted naval opponents."""
+        return [
+            (character_id, name)
+            for character_id, name in self.character_targets
+            if NAVAL_BATTLE_TARGET_ID_MIN <= character_id <= NAVAL_BATTLE_TARGET_ID_MAX
+        ]
+
     def _body_npc_id(self, targets: list[tuple[int, str]] | None = None) -> int:
         targets = self.character_targets if targets is None else targets
         return self._body_target_id_from_text(
@@ -3554,6 +5118,10 @@ class DisevEditor:
         if kind == "음원 정지":
             # 새 정지 명령에는 별도 지정값이 필요 없도록 0을 기본값으로 쓴다.
             return "0"
+        if kind == "음원 재생":
+            return str(self._body_audio_id())
+        if kind in MEDIA_PREVIEW_KINDS:
+            return str(self._body_media_id())
         if kind in ("아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리"):
             return str(self._body_item_id())
         if kind == "교역품 활성화":
@@ -3568,6 +5136,8 @@ class DisevEditor:
             return str(self._body_character_id())
         if kind in ("일기토 실행", "육상전 실행"):
             return str(self._body_npc_id())
+        if kind == "해상 전투":
+            return str(self._body_npc_id(self._naval_battle_targets()))
         if kind in RANDOM_RANGE_COMMAND_KINDS:
             first = self.body_value_var.get().strip()
             second = self.body_value2_var.get().strip()
@@ -4551,6 +6121,7 @@ class DisevEditor:
         self.pending = False
         self.rows = []
         self.discovery_part_map = {}
+        self._script_media_name_cache.clear()
 
         candidate = self.disev_path.with_name("CDS_95.EXE")
         if candidate.exists():
@@ -4603,6 +6174,7 @@ class DisevEditor:
         self.exe_path = path.resolve()
         self.rows = rows
         self.discovery_part_map = self._build_discovery_part_map(rows)
+        self._script_media_name_cache.clear()
         self.discovery_targets = self._load_discovery_targets(rows)
         self.body_character_combo.configure(
             values=tuple(name for _item_id, name in self.discovery_targets)
@@ -5745,6 +7317,8 @@ class DisevEditor:
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
             elif kind == "교역품 활성화":
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
+            elif kind in MEDIA_PREVIEW_KINDS:
+                token.update(self._new_body_token(kind, self._body_input_value(kind)))
             elif kind in ("소지금 증가", "소지금 감소", "특수 상태 처리"):
                 token.update(self._new_body_token(kind, self.body_value_var.get()))
             else:
@@ -5892,7 +7466,15 @@ class DisevEditor:
                 (name for candidate_id, name in self.character_targets if candidate_id == target_id),
                 "대상 미확인",
             )
-            return self._body_target_display(target_id, target_name)
+            # 편집 콤보박스는 중복 이름 식별을 위해 `ID | 이름`을 사용하지만,
+            # 본문 목록의 값·목적 행에는 사람이 읽을 이름만 표시한다.
+            return target_name
+        if kind == "해상 전투":
+            target_id = int(value)
+            return next(
+                (name for candidate_id, name in self._naval_battle_targets() if candidate_id == target_id),
+                str(target_id),
+            )
         if kind == "일기토 연출 세트 설정":
             return f"세트 {value}"
         if kind == "이벤트 조건 판정":
@@ -5968,6 +7550,7 @@ class DisevEditor:
             return False
 
         self.parts[index] = changed_bytes
+        self._script_media_name_cache.clear()
         if changed_bytes == self.original_parts[index]:
             self.modified.discard(index)
         else:
@@ -6127,15 +7710,12 @@ class DisevEditor:
 
     def _show_update_history_dialog(self, version: str, history: str) -> None:
         """업데이트 뒤 전체 이력을 스크롤 가능한 중앙 팝업으로 보여 준다."""
-        self.root.update_idletasks()
         dialog = tk.Toplevel(self.root)
+        dialog.withdraw()
         dialog.title(APP_TITLE)
         dialog.transient(self.root)
         dialog.resizable(True, True)
         width, height = 620, 460
-        x = self.root.winfo_x() + max(0, (self.root.winfo_width() - width) // 2)
-        y = self.root.winfo_y() + max(0, (self.root.winfo_height() - height) // 2)
-        dialog.geometry(f"{width}x{height}+{x}+{y}")
         dialog.minsize(440, 260)
         ttk.Label(dialog, text=ui("update_history_title", version), font=("Malgun Gothic", 10, "bold")).pack(
             anchor="w", padx=12, pady=(12, 6))
@@ -6151,6 +7731,9 @@ class DisevEditor:
         scrollbar.pack(side="right", fill="y")
         ttk.Button(dialog, text=ui("close"), command=dialog.destroy).pack(pady=(0, 12))
         dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+        self._center_popup(dialog, width, height)
+        dialog.deiconify()
+        dialog.lift()
         dialog.focus_set()
 
     def _show_update_notice(self) -> None:
@@ -6177,19 +7760,43 @@ class DisevEditor:
 
         threading.Thread(target=worker, name="disev-update-history", daemon=True).start()
 
-    def _show_update_button(self, visible: bool) -> None:
-        if visible:
-            if not self.update_button.winfo_manager():
-                self.update_button.pack(side="left", padx=(6, 0))
-        else:
-            self.update_button.pack_forget()
+    def _show_update_menu(self, version: str | None) -> None:
+        """사용 가능한 새 버전이 있을 때만 메뉴바에 업데이트 항목을 표시한다."""
+        if version:
+            label = ui("update_menu", version)
+            if self._update_menu_index is None:
+                self.menu_bar.add_command(label=label, command=self._prompt_available_update)
+                self._update_menu_index = int(self.menu_bar.index("end"))
+            else:
+                self.menu_bar.entryconfigure(self._update_menu_index, label=label)
+            return
+        if self._update_menu_index is not None:
+            self.menu_bar.delete(self._update_menu_index)
+            self._update_menu_index = None
+
+    def _set_update_menu_state(self, state: str) -> None:
+        if self._update_menu_index is not None:
+            self.menu_bar.entryconfigure(self._update_menu_index, state=state)
+
+    def _prompt_available_update(self) -> None:
+        if self._available_update is None or self._update_download_in_progress:
+            return
+        asset, release = self._available_update
+        remote_tag = str(release.get("tag_name", "")).strip()
+        if messagebox.askyesno(
+            APP_TITLE,
+            ui("update_available", remote_tag.lstrip("vV"), APP_VERSION),
+            parent=self.root,
+        ):
+            if self._confirm_abandon_archive():
+                self._download_and_install_update(asset, release)
 
     def check_for_updates(self, automatic: bool = False) -> None:
         """GitHub 최신 정식 Release를 백그라운드에서 확인한다."""
         if self._update_check_in_progress or self._update_download_in_progress or not UPDATE_LATEST_URL:
             return
         self._update_check_in_progress = True
-        self.update_button.configure(state="disabled")
+        self._set_update_menu_state("disabled")
         if not automatic:
             self.status_var.set(ui("checking_updates"))
 
@@ -6215,40 +7822,41 @@ class DisevEditor:
 
     def _handle_update_error(self, error: object, automatic: bool) -> None:
         self._update_check_in_progress = False
-        self.update_button.configure(state="normal")
+        self._set_update_menu_state("normal")
         if not automatic:
             messagebox.showwarning(APP_TITLE, ui("update_check_failed", error), parent=self.root)
 
     def _handle_update_release(self, release: object, automatic: bool) -> None:
         self._update_check_in_progress = False
-        self.update_button.configure(state="normal")
+        self._set_update_menu_state("normal")
         if not isinstance(release, dict):
             self._handle_update_error("invalid release response", automatic)
             return
         remote_tag = str(release.get("tag_name", "")).strip()
         remote_version = parse_release_version(remote_tag)
         if remote_version is None or remote_version <= parse_release_version(APP_VERSION):
+            self._available_update = None
+            self._show_update_menu(None)
             if not automatic:
                 messagebox.showinfo(APP_TITLE, ui("latest_version", APP_VERSION), parent=self.root)
             return
         asset = self._release_asset(release)
         if asset is None or not asset.get("browser_download_url"):
+            self._available_update = None
+            self._show_update_menu(None)
             if not automatic:
                 messagebox.showwarning(APP_TITLE, ui("update_asset_missing"), parent=self.root)
             return
-        self._show_update_button(True)
-        if automatic:
-            return
-        if messagebox.askyesno(APP_TITLE, ui("update_available", remote_tag.lstrip("vV"), APP_VERSION), parent=self.root):
-            if self._confirm_abandon_archive():
-                self._download_and_install_update(asset, release)
+        self._available_update = (asset, release)
+        self._show_update_menu(remote_tag.lstrip("vV"))
+        self._prompt_available_update()
 
     def _download_and_install_update(self, asset: dict[str, object], release: dict[str, object]) -> None:
         if not getattr(sys, "frozen", False):
             messagebox.showinfo(APP_TITLE, ui("update_only_frozen"), parent=self.root)
             return
         self._update_download_in_progress = True
-        self.update_button.configure(state="disabled")
+        self._set_update_menu_state("disabled")
         self.status_var.set(ui("downloading_update"))
 
         def worker() -> None:
@@ -6292,14 +7900,14 @@ class DisevEditor:
 
     def _handle_update_download_error(self, error: object) -> None:
         self._update_download_in_progress = False
-        self.update_button.configure(state="normal")
+        self._set_update_menu_state("normal")
         messagebox.showerror(APP_TITLE, ui("update_failed", error), parent=self.root)
 
     def _launch_update_replacer(self, source_path: str, release: dict[str, object]) -> None:
         """현재 EXE 종료 후 교체·재시작하는 일회용 배치 파일을 실행한다."""
         if not self._confirm_abandon_archive():
             self._update_download_in_progress = False
-            self.update_button.configure(state="normal")
+            self._set_update_menu_state("normal")
             return
         target_path = os.path.abspath(sys.executable)
         script_path = os.path.join(tempfile.gettempdir(), f"DISEV_Editor_update_{os.getpid()}.cmd")
@@ -6344,6 +7952,11 @@ class DisevEditor:
                 self._write_archive(self.disev_path, make_backup=True)
                 if before and (self.modified or self.pending):
                     return
+        self._stop_audio_preview()
+        self._close_media_preview()
+        if self._audio_preview_directory is not None:
+            self._audio_preview_directory.cleanup()
+            self._audio_preview_directory = None
         self.search_edit.destroy()
         self.root.destroy()
 
