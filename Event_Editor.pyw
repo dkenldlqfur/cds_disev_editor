@@ -89,13 +89,15 @@ APP_TITLE = f"{ui('app_title')} v{APP_VERSION}"
 UPDATE_CONFIG = APP_CONFIG.get("update", {})
 UPDATE_CONFIG = UPDATE_CONFIG if isinstance(UPDATE_CONFIG, dict) else {}
 UPDATE_REPOSITORY = str(UPDATE_CONFIG.get("repository", "")).strip()
-UPDATE_ASSET_NAME = str(UPDATE_CONFIG.get("asset_name", "DISEV_Editor_v{version}.zip")).strip()
-UPDATE_EXECUTABLE_NAME = "DISEV_Editor.exe"
+UPDATE_ASSET_NAME = str(UPDATE_CONFIG.get("asset_name", "Event_Editor_v{version}.zip")).strip()
+UPDATE_EXECUTABLE_NAME = "Event_Editor.exe"
 UPDATE_LATEST_URL = (f"https://api.github.com/repos/{UPDATE_REPOSITORY}/releases/latest"
                      if UPDATE_REPOSITORY else "")
 UPDATE_RELEASES_URL = (f"https://api.github.com/repos/{UPDATE_REPOSITORY}/releases?per_page=100"
                        if UPDATE_REPOSITORY else "")
 UPDATE_HISTORY_MIN_VERSION = (0, 1, 0)
+EVENT_FILE_DISCOVERY = "discovery"
+EVENT_FILE_HISTORY = "history"
 
 
 def parse_release_version(value: object) -> tuple[int, int, int] | None:
@@ -156,9 +158,87 @@ CONDITION_KINDS = {
         (("월", 1, 12), ("연도", 0, 65535)),
         lambda v: b"\x1B\x17" + bytes((v[0],)) + b"\x16" + struct.pack("<H", v[1]),
     ),
+    "특정 연·월 일치": (
+        (("월", 1, 12), ("연도", 0, 65535)),
+        lambda v: b"\x1C\x17" + bytes((v[0],)) + b"\x16" + struct.pack("<H", v[1]),
+    ),
+    # HIST_EV 파트 8 등에서 사용하는 발견 기록 조건. 02 0B는 발견물
+    # 레코드의 두 진행 슬롯 중 하나라도 활성인지 검사한다.
+    "발견 기록 있음": (
+        (("발견물 ID", 0, 65535),),
+        lambda v: b"\x02\x0B" + struct.pack("<H", v[0]),
+    ),
+    "발견 기록 없음": (
+        (("발견물 ID", 0, 65535),),
+        lambda v: b"\x3A\x0B" + struct.pack("<H", v[0]),
+    ),
+    # 세이브의 발견 상태 마커에서 bit 0x80이 설정됐는지 검사한다.
+    # 발견(0x4C)은 거짓, 보고 완료(0xCC)는 참이다.
+    "보고 완료": (
+        (("발견물 ID", 0, 65535),),
+        lambda v: b"\x5E\x0B" + struct.pack("<H", v[0]),
+    ),
+    # HIST_EV의 식민도시 개방 조건에 쓰인다. 의도는 발견 후 경과 년수
+    # 비교지만 한국어판 EXE는 연도 뺄셈 방향/부호 비교 오류로 정상 게임
+    # 연도에서 사실상 항상 참을 반환한다. 바이트는 손실 없이 편집한다.
+    "발견 후 경과 년수 (패치 필요)": (
+        (("발견물 ID", 0, 65535), ("기준 연수", 0, 65535)),
+        lambda v: b"\x1B\x0B" + struct.pack("<H", v[0]) + b"\x16" + struct.pack("<H", v[1]),
+    ),
+    # 27 00/28 00은 지정 도시의 현재 소속 국가를 비교하는 한 쌍이다.
+    # 27은 일치, 28은 불일치일 때 조건을 통과한다.
+    "도시 국적 일치": (
+        (("국가/세력 ID", 0, 65535), ("도시 ID", 0, 65535)),
+        lambda v: b"\x27\x00" + struct.pack("<H", v[0]) + b"\x08" + struct.pack("<H", v[1]),
+    ),
+    "도시 국적 불일치": (
+        (("국가/세력 ID", 0, 65535), ("도시 ID", 0, 65535)),
+        lambda v: b"\x28\x00" + struct.pack("<H", v[0]) + b"\x08" + struct.pack("<H", v[1]),
+    ),
+    # 도시 레코드 +4의 0x0004 비트는 미등장/비활성 상태다.
+    "도시 등장·활성": (
+        (("도시 ID", 0, 65535),),
+        lambda v: b"\x27\x08" + struct.pack("<H", v[0]),
+    ),
+    "도시 미등장·비활성": (
+        (("도시 ID", 0, 65535),),
+        lambda v: b"\x28\x08" + struct.pack("<H", v[0]),
+    ),
+    "현재 도시 시설 보유": (
+        (("시설 ID", 0, 65535),),
+        lambda v: b"\x24\x10" + struct.pack("<H", v[0]),
+    ),
+    "지정 도시 시설 보유": (
+        (("시설 ID", 0, 65535), ("도시 ID", 0, 65535)),
+        lambda v: b"\x27\x10" + struct.pack("<H", v[0]) + b"\x08" + struct.pack("<H", v[1]),
+    ),
+    "지정 도시 시설 미보유": (
+        (("시설 ID", 0, 65535), ("도시 ID", 0, 65535)),
+        lambda v: b"\x28\x10" + struct.pack("<H", v[0]) + b"\x08" + struct.pack("<H", v[1]),
+    ),
     "연도 범위": (
         (("시작 연도", 0, 65535), ("종료 연도", 0, 65535)),
         lambda v: b"\x36\x16" + struct.pack("<H", v[0]) + b"\x16" + struct.pack("<H", v[1]),
+    ),
+    "현재 월 일치": (
+        (("월", 1, 12),),
+        lambda v: b"\x5D\x17" + bytes((v[0],)),
+    ),
+    "상태값 초과": (
+        (("상태값 ID", 0, 65535), ("기준값", 0, 0xFFFFFFFF)),
+        lambda v: b"\x2A\x1C" + struct.pack("<H", v[0]) + b"\x1A" + struct.pack("<I", v[1]),
+    ),
+    "상태값 이상": (
+        (("상태값 ID", 0, 65535), ("기준값", 0, 0xFFFFFFFF)),
+        lambda v: b"\x2B\x1C" + struct.pack("<H", v[0]) + b"\x1A" + struct.pack("<I", v[1]),
+    ),
+    "상태값 미만": (
+        (("상태값 ID", 0, 65535), ("기준값", 0, 0xFFFFFFFF)),
+        lambda v: b"\x2C\x1C" + struct.pack("<H", v[0]) + b"\x1A" + struct.pack("<I", v[1]),
+    ),
+    "상태값 이하": (
+        (("상태값 ID", 0, 65535), ("기준값", 0, 0xFFFFFFFF)),
+        lambda v: b"\x2D\x1C" + struct.pack("<H", v[0]) + b"\x1A" + struct.pack("<I", v[1]),
     ),
     # 2E가 두 피연산자를 모두 고정값(1A)으로 받을 때 EXE는 Random(분모) < 성공값을 검사한다.
     "무작위 확률": (
@@ -170,43 +250,117 @@ CONDITION_KINDS = {
     "인물 조건": ((), lambda v: b"\x37\x0D" + struct.pack("<H", v[0])),
     "후원자 조건": ((), lambda v: b"\x37\x12" + struct.pack("<H", v[0])),
     "후원자 계약 없음": ((), lambda values: b"\x5A"),
+    "함대 선박 보유": ((), lambda values: b"\x59"),
+    "해상 이동 중": ((), lambda values: b"\x5F"),
+    "육상 이동 중": ((), lambda values: b"\x60"),
+    "함대 선박 보유 (육상 이동 아님)": ((), lambda values: b"\x67"),
     "또는 (OR)": ((), lambda values: b"\x50"),
 }
 
-# 편집기는 바이트코드 조건명을 보존하되, UI에서는 조건 계열과 판정으로 묶는다.
-CONDITION_GROUPS: dict[str, tuple[str, ...]] = {
-    "실행": ("항상 실행",),
-    "위치": ("국가", "도시", "건물", "문화권"),
-    "상태": (
-        "아이템 소지", "아이템 미소지", "힌트 활성", "힌트 미활성",
-        "인물 미조우", "후원자 활성", "후원자 계약 없음",
-    ),
-    "날짜": ("기준 연도 이후(포함)", "기준 연도 일치", "특정 연·월", "연도 범위"),
-    "확률": ("무작위 확률",),
-    "논리": ("또는 (OR)",),
+# DISEV/HIST_EV는 같은 EXE 조건 인터프리터를 사용한다. 호출 문맥 종류가
+# 필요한 41/42/65 계열은 제외하고, 전역 상태만 읽는 아래 조건은 두 파일에서
+# 모두 선택할 수 있다. 다만 자주 쓰는 흐름이 서로 다르므로 파일별로 분류와
+# 표시 순서를 따로 둔다.
+CONDITION_KIND_UI_LABELS = {
+    "항상 실행": "항상 실행",
+    "국가": "국가", "도시": "도시", "건물": "건물", "문화권": "문화권",
+    "아이템 소지": "아이템 소지", "아이템 비소지": "아이템 미소지",
+    "힌트 상태 활성": "힌트 활성", "힌트 상태 미활성": "힌트 미활성",
+    "인물 조건": "인물 미조우", "후원자 조건": "후원자 활성",
+    "후원자 계약 없음": "후원자 계약 없음",
+    "발견 기록 있음": "발견 기록 있음", "발견 기록 없음": "발견 기록 없음",
+    "보고 완료": "보고 완료",
+    "발견 후 경과 년수 (패치 필요)": "발견 후 경과 년수 (패치 필요)",
+    "도시 등장·활성": "등장·활성", "도시 미등장·비활성": "미등장·비활성",
+    "도시 국적 일치": "국적 일치", "도시 국적 불일치": "국적 불일치",
+    "현재 도시 시설 보유": "현재 도시 시설 보유",
+    "지정 도시 시설 보유": "지정 도시 시설 보유",
+    "지정 도시 시설 미보유": "지정 도시 시설 미보유",
+    "기준 연도 이후": "기준 연도 이후(포함)", "기준 연도 일치": "기준 연도 일치",
+    "특정 연·월": "기준 연도 이상", "특정 연·월 일치": "특정 연·월 일치",
+    "현재 월 일치": "현재 월 일치", "연도 범위": "연도 범위",
+    "상태값 초과": "초과", "상태값 이상": "이상",
+    "상태값 미만": "미만", "상태값 이하": "이하",
+    "무작위 확률": "무작위 확률",
+    "함대 선박 보유": "함대 선박 보유", "해상 이동 중": "해상 이동 중",
+    "육상 이동 중": "육상 이동 중",
+    "함대 선박 보유 (육상 이동 아님)": "함대 선박 보유 (육상 이동 아님)",
+    "또는 (OR)": "또는 (OR)",
 }
-CONDITION_GROUP_TO_KIND = {
-    ("실행", "항상 실행"): "항상 실행",
-    ("위치", "국가"): "국가", ("위치", "도시"): "도시", ("위치", "건물"): "건물", ("위치", "문화권"): "문화권",
-    ("상태", "아이템 소지"): "아이템 소지", ("상태", "아이템 미소지"): "아이템 비소지",
-    ("상태", "힌트 활성"): "힌트 상태 활성", ("상태", "힌트 미활성"): "힌트 상태 미활성",
-    ("상태", "인물 미조우"): "인물 조건", ("상태", "후원자 활성"): "후원자 조건",
-    ("상태", "후원자 계약 없음"): "후원자 계약 없음",
-    ("날짜", "기준 연도 이후(포함)"): "기준 연도 이후",
-    ("날짜", "기준 연도 일치"): "기준 연도 일치",
-    ("날짜", "특정 연·월"): "특정 연·월", ("날짜", "연도 범위"): "연도 범위",
-    ("확률", "무작위 확률"): "무작위 확률",
-    ("논리", "또는 (OR)"): "또는 (OR)",
-}
-CONDITION_KIND_TO_GROUP = {kind: group for group, kind in CONDITION_GROUP_TO_KIND.items()}
+
+DISCOVERY_CONDITION_LAYOUT = (
+    ("실행·논리", ("항상 실행", "또는 (OR)")),
+    ("발생 위치", ("국가", "도시", "건물", "문화권")),
+    ("소지품·힌트", ("아이템 소지", "아이템 비소지", "힌트 상태 활성", "힌트 상태 미활성")),
+    ("인물·후원자", ("인물 조건", "후원자 조건", "후원자 계약 없음")),
+    ("발견 진행", ("발견 기록 있음", "발견 기록 없음", "보고 완료", "발견 후 경과 년수 (패치 필요)")),
+    ("도시 상태", (
+        "도시 등장·활성", "도시 미등장·비활성", "도시 국적 일치", "도시 국적 불일치",
+        "현재 도시 시설 보유", "지정 도시 시설 보유", "지정 도시 시설 미보유",
+    )),
+    ("날짜", ("기준 연도 이후", "기준 연도 일치", "특정 연·월", "특정 연·월 일치", "현재 월 일치", "연도 범위")),
+    ("수치·확률", ("상태값 초과", "상태값 이상", "상태값 미만", "상태값 이하", "무작위 확률")),
+    ("이동·함대", ("함대 선박 보유", "해상 이동 중", "육상 이동 중", "함대 선박 보유 (육상 이동 아님)")),
+)
+
+HISTORY_CONDITION_LAYOUT = (
+    ("실행·논리", ("항상 실행", "또는 (OR)")),
+    ("발생 시점", ("특정 연·월 일치", "특정 연·월", "기준 연도 이후", "기준 연도 일치", "현재 월 일치", "연도 범위")),
+    ("발견 진행", ("발견 기록 있음", "발견 기록 없음", "보고 완료", "발견 후 경과 년수 (패치 필요)")),
+    ("도시 상태", (
+        "도시 등장·활성", "도시 미등장·비활성", "도시 국적 일치", "도시 국적 불일치",
+        "현재 도시 시설 보유", "지정 도시 시설 보유", "지정 도시 시설 미보유",
+    )),
+    ("발생 위치", ("국가", "도시", "건물", "문화권")),
+    ("소지품·힌트", ("아이템 소지", "아이템 비소지", "힌트 상태 활성", "힌트 상태 미활성")),
+    ("인물·후원자", ("인물 조건", "후원자 조건", "후원자 계약 없음")),
+    ("수치·확률", ("상태값 초과", "상태값 이상", "상태값 미만", "상태값 이하", "무작위 확률")),
+    ("이동·함대", ("함대 선박 보유", "해상 이동 중", "육상 이동 중", "함대 선박 보유 (육상 이동 아님)")),
+)
+
+
+def _build_condition_ui_maps(layout):
+    groups: dict[str, tuple[str, ...]] = {}
+    group_to_kind: dict[tuple[str, str], str] = {}
+    for group, kinds in layout:
+        labels = tuple(CONDITION_KIND_UI_LABELS[kind] for kind in kinds)
+        groups[group] = labels
+        for label, kind in zip(labels, kinds):
+            group_to_kind[(group, label)] = kind
+    kind_to_group = {kind: path for path, kind in group_to_kind.items()}
+    if set(kind_to_group) != set(CONDITION_KINDS):
+        raise RuntimeError(
+            "조건 UI 분류 표 불일치: "
+            f"누락={sorted(set(CONDITION_KINDS) - set(kind_to_group))}, "
+            f"미사용={sorted(set(kind_to_group) - set(CONDITION_KINDS))}"
+        )
+    return groups, group_to_kind, kind_to_group
+
+
+CONDITION_GROUPS, CONDITION_GROUP_TO_KIND, CONDITION_KIND_TO_GROUP = _build_condition_ui_maps(
+    DISCOVERY_CONDITION_LAYOUT
+)
+HISTORY_CONDITION_GROUPS, HISTORY_CONDITION_GROUP_TO_KIND, HISTORY_CONDITION_KIND_TO_GROUP = _build_condition_ui_maps(
+    HISTORY_CONDITION_LAYOUT
+)
+
+HINT_REGISTER_COMMAND_KIND = "힌트 등장·등록"
+HINT_TARGET_COMMAND_KINDS = ("힌트 획득", HINT_REGISTER_COMMAND_KIND)
+CITY_SIZE_INCREASE_COMMAND_KIND = "도시 규모 증가"
+CITY_SIZE_DECREASE_COMMAND_KIND = "도시 규모 감소"
+CITY_SIZE_COMMAND_KINDS = (CITY_SIZE_INCREASE_COMMAND_KIND, CITY_SIZE_DECREASE_COMMAND_KIND)
+NATION_CREATION_COMMAND_KIND = "국가 생성"
+NATION_STATE_COMMAND_KINDS = (NATION_CREATION_COMMAND_KIND, "국가 멸망 처리")
+CITY_FACILITY_ADD_COMMAND_KIND = "도시 시설 추가"
+CITY_FACILITY_COMMAND_KINDS = (CITY_FACILITY_ADD_COMMAND_KIND, "도시 시설 제거")
 
 BODY_COMMAND_KINDS = (
-    "대사", "예/아니오 대사", "다중 선택지 대사", "도시 소문 등록", "AVI 재생", "발견물 등록/발견 처리", "아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리",
-    "음원 재생", "음원 정지", "DSTILL 이미지 표시", "EVSTILL 이미지 표시", "CG 애니메이션 재생", "특수 조우 연출 설정", "특수 수치 판정", "해상 전투", "일기토 실행", "육상전 실행", "일기토 연출 세트 설정", "이벤트 조건 판정", "이벤트 내부 참조", "델포이 신탁 출력", "이벤트 판정", "힌트 획득", "대기", "날짜 경과", "발견물 이름 입력 대기", "발견물 이름 강제 입력",
-    "신도시 생성",
+    "대사", "예/아니오 대사", "다중 선택지 대사", "도시 소문 등록", "문화권 소문 등록", "AVI 재생", "발견물 등록/발견 처리", "아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리",
+    "음원 재생", "음원 정지", "DSTILL 이미지 표시", "EVSTILL 이미지 표시", "CG 애니메이션 재생", "특수 조우 연출 설정", "특수 수치 판정", "해상 전투", "일기토 실행", "육상전 실행", "일기토 연출 세트 설정", "이벤트 조건 판정", "이벤트 내부 참조", "델포이 신탁 출력", "이벤트 판정", "힌트 획득", HINT_REGISTER_COMMAND_KIND, "대기", "날짜 경과", "발견물 이름 입력 대기", "발견물 이름 강제 입력",
+    "도시 발견·개방", "신도시 생성",
     "이미지 표시 종료", "대화창 숨김", "대화창 표시", "결과 거짓 설정", "게임 오버", "결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "부관 고용 조건 이동", "선택지 결과 시 이동", "힌트 상태 조건 이동", "발견물 상태 조건 이동", "발견물 등록 판정 이동", "아이템 소지 조건 이동", "아이템 미소지 조건 이동", "기준 연도 조건 이동", "연도 상한 조건 이동", "연도 범위 조건 이동", "도시 조건 이동", "NPC 조건 이동", "상태값 초과 조건 이동", "상태값 초과 조건 이동 (고정 기준)", "상태값 미만 조건 이동", "상태값 이하 조건 이동", "상태값 미만 조건 이동 (무작위 기준)", "상태값 이하 조건 이동 (무작위 기준)", "능력치 비교 분기", "능력치 비교3 분기", "상태값 참조 비교 조건 이동", "상태값 특수 비교 조건 이동", "소지금 비교 분기", "도시 국적 일치 조건 이동", "STORY0.CDS 외 분기", "STORY1.CDS 외 분기",
     "소지금 증가", "소지금 감소", "교역품 활성화",
-    "상태값 증감", "상태값 설정", "상태값 참조 증가", "국가 멸망 처리", "특수 상태 처리", "인물 상태 처리 1", "인물 상태 처리 2", "도시 국적 변경", "도시 점령지 설정", "도시 점령지 해제", "도시 제거", "도시 시설 제거", "이벤트 대상 도시 이동", "이벤트 결과 코드",
+    "상태값 증감", "상태값 설정", "상태값 참조 증가", *NATION_STATE_COMMAND_KINDS, "특수 상태 처리", "인물 상태 처리 1", "인물 상태 처리 2", "도시 국적 변경", "도시 소속 국가 설정", "도시 상태 설정", *CITY_SIZE_COMMAND_KINDS, "도시 점령지 설정", "도시 점령지 해제", "도시 제거", *CITY_FACILITY_COMMAND_KINDS, "이벤트 대상 도시 이동", "이벤트 결과 코드",
 )
 MEDIA_PREVIEW_KINDS = (
     "DSTILL 이미지 표시", "EVSTILL 이미지 표시", "CG 애니메이션 재생", "AVI 재생",
@@ -236,7 +390,20 @@ EVSTILL_SCENE_NAMES = (
     "게임 오버 배경 (종료 상태 1·2)", "게임 오버 배경 (종료 상태 3)", "확인된 사용처 없음", "주인공 은퇴",
 )
 DIALOGUE_KINDS = ("대사", "예/아니오 대사", "다중 선택지 대사")
+CITY_DISCOVERY_COMMAND_KIND = "도시 발견·개방"
+CITY_NATION_SET_COMMAND_KIND = "도시 소속 국가 설정"
+CITY_STATUS_SET_COMMAND_KIND = "도시 상태 설정"
+CITY_STATUS_TYPES = (
+    (0, "통상"), (1, "전염병"), (2, "기근"), (3, "대기근"),
+    (4, "풍작"), (5, "대풍작"), (6, "대한파"), (7, "혹서"),
+    (8, "노동력부족"), (9, "전쟁"), (10, "축제"), (11, "호경기"),
+    (12, "불경기"), (13, "대조선"),
+)
+CITY_STATUS_NAMES = dict(CITY_STATUS_TYPES)
+CITY_STATUS_IDS = {name: status_id for status_id, name in CITY_STATUS_TYPES}
 CITY_STRING_COMMAND_KIND = "도시 소문 등록"
+CULTURE_STRING_COMMAND_KIND = "문화권 소문 등록"
+RUMOR_STRING_COMMAND_KINDS = (CITY_STRING_COMMAND_KIND, CULTURE_STRING_COMMAND_KIND)
 # `화자명 + 81 46` 접두사가 있는 대사는 EXE가 화자별 경로로 처리한다.
 # 화자 해석기 0x40C880에서 검사관은 런타임 객체가 없으면 출력 객체를 0으로
 # 돌려 해당 행을 건너뛴다. 부관은 미고용이어도 대체 화자 객체를 만들므로
@@ -247,14 +414,15 @@ CONDITIONAL_DIALOGUE_SPEAKER_NOTES = {
 DISCOVERY_NAME_WAIT_KIND = "발견물 이름 입력 대기"
 DISCOVERY_NAME_FORCE_KIND = "발견물 이름 강제 입력"
 DISCOVERY_NAME_COMMAND_KINDS = (DISCOVERY_NAME_WAIT_KIND, DISCOVERY_NAME_FORCE_KIND)
-TEXT_VALUE_COMMAND_KINDS = DIALOGUE_KINDS + (CITY_STRING_COMMAND_KIND,) + DISCOVERY_NAME_COMMAND_KINDS
+TEXT_VALUE_COMMAND_KINDS = DIALOGUE_KINDS + RUMOR_STRING_COMMAND_KINDS + DISCOVERY_NAME_COMMAND_KINDS
 CHARACTER_TARGET_COMMAND_KINDS = (
     "인물 상태 처리 1", "인물 상태 처리 2",
 )
 NAVAL_BATTLE_TARGET_ID_MIN = 262
 NAVAL_BATTLE_TARGET_ID_MAX = 274
 CITY_TARGET_COMMAND_KINDS = (
-    "도시 국적 변경", "도시 점령지 설정", "도시 점령지 해제", "도시 제거", "도시 시설 제거", "이벤트 대상 도시 이동",
+    CITY_DISCOVERY_COMMAND_KIND, "도시 국적 변경", "도시 점령지 설정", "도시 점령지 해제",
+    "도시 제거", *CITY_FACILITY_COMMAND_KINDS, "이벤트 대상 도시 이동",
 )
 MINIGAME_SUBKINDS = (
     "성배 퍼즐", "스핑크스 퀴즈", "미궁 64 퍼즐", "낚시 게임",
@@ -397,7 +565,10 @@ BODY_PATH_TO_KIND: dict[tuple[str, str, str], str] = {
     ("진행·등록", "아이템", "소지품 제거"): "아이템 상실",
     ("진행·등록", "아이템", "이벤트 처리"): "이벤트 아이템 처리",
     ("진행·등록", "힌트", "획득"): "힌트 획득",
+    ("진행·등록", "힌트", "등장·등록"): HINT_REGISTER_COMMAND_KIND,
     ("진행·등록", "도시", "소문 등록"): CITY_STRING_COMMAND_KIND,
+    ("진행·등록", "문화권", "소문 등록"): CULTURE_STRING_COMMAND_KIND,
+    ("진행·등록", "도시", "발견·개방"): CITY_DISCOVERY_COMMAND_KIND,
     ("진행·등록", "도시", "신도시 생성"): "신도시 생성",
     ("진행·등록", "교역품", "활성화"): "교역품 활성화",
 
@@ -409,11 +580,17 @@ BODY_PATH_TO_KIND: dict[tuple[str, str, str], str] = {
     ("상태 변경", "인물", "조우 처리"): "인물 상태 처리 1",
     ("상태 변경", "인물", "통역 고용·교체"): "인물 상태 처리 2",
     ("상태 변경", "도시", "국적 변경"): "도시 국적 변경",
+    ("상태 변경", "도시", "소속 국가 설정"): CITY_NATION_SET_COMMAND_KIND,
+    ("상태 변경", "도시", "상태 설정"): CITY_STATUS_SET_COMMAND_KIND,
+    ("상태 변경", "도시", "규모 증가"): CITY_SIZE_INCREASE_COMMAND_KIND,
+    ("상태 변경", "도시", "규모 감소"): CITY_SIZE_DECREASE_COMMAND_KIND,
     ("상태 변경", "도시", "점령지 설정"): "도시 점령지 설정",
     ("상태 변경", "도시", "점령지 해제"): "도시 점령지 해제",
     ("상태 변경", "도시", "도시 제거"): "도시 제거",
+    ("상태 변경", "도시", "시설 추가"): CITY_FACILITY_ADD_COMMAND_KIND,
     ("상태 변경", "도시", "시설 제거"): "도시 시설 제거",
     ("상태 변경", "도시", "이벤트 대상 이동"): "이벤트 대상 도시 이동",
+    ("상태 변경", "국가·세력", "생성"): NATION_CREATION_COMMAND_KIND,
     ("상태 변경", "국가·세력", "멸망 처리"): "국가 멸망 처리",
     ("상태 변경", "인원", "투입 인원 절반"): "특수 상태 처리",
     ("상태 변경", "이벤트", "결과 코드 설정"): "이벤트 결과 코드",
@@ -486,6 +663,75 @@ BODY_KIND_TO_PATH.update({
     "이벤트 조건 판정": ("판정", "주인공 능력치", "운 판정"),
 })
 
+# 양쪽 원본 이벤트 파일에서 실제 사용됐고 동일한 EXE 처리 경로와
+# 재인코딩을 확인한 명령이다. 파일별 명령 목록을 제한하더라도 이 집합은
+# DISEV와 HIST_EV 양쪽에서 항상 편집할 수 있어야 한다.
+COMMON_BODY_KINDS = {
+    "국가 멸망 처리",
+    ABILITY_COMPARE3_BRANCH_KIND,
+    CITY_STRING_COMMAND_KIND,
+    "도시 시설 제거",
+    "도시 점령지 설정",
+    "신도시 생성",
+}
+
+# HIST_EV 분석으로 추가된 세계 상태 명령이다. 발견물 이벤트의 명령 선택
+# 목록에서는 숨기고, 역사 이벤트의 진행·등록/세계 상태 변경에 모아 둔다.
+HISTORY_EVENT_BODY_KINDS = {
+    CULTURE_STRING_COMMAND_KIND, CITY_DISCOVERY_COMMAND_KIND,
+    "도시 점령지 해제", CITY_FACILITY_ADD_COMMAND_KIND,
+    CITY_NATION_SET_COMMAND_KIND, CITY_STATUS_SET_COMMAND_KIND,
+    *CITY_SIZE_COMMAND_KINDS, NATION_CREATION_COMMAND_KIND,
+    HINT_REGISTER_COMMAND_KIND,
+}
+
+# 원본 HIST_EV에는 없지만 같은 EXE 처리기와 재인코딩을 확인해 역사 이벤트
+# 편집 목록에도 안전하게 제공하는 발견물 이벤트 명령이다.
+HISTORY_VERIFIED_SHARED_BODY_KINDS = {
+    "대사", "DSTILL 이미지 표시", "AVI 재생", "이벤트 결과 코드",
+    "소지금 증가", "델포이 신탁 출력",
+}
+
+# 발견물 이벤트에서는 기존 DISEV 명령과 양쪽 원본 공통 명령만 제공한다.
+# 역사 이벤트 전용으로 분석한 세계 상태 명령은 해당 파일에서만 노출한다.
+DISCOVERY_BODY_KINDS = set(BODY_COMMAND_KINDS) - HISTORY_EVENT_BODY_KINDS
+
+# HIST_EV에서 원본 바이트와 재인코딩이 모두 확인됐거나, 공통 처리기로
+# 별도 검증한 명령만 편집 목록에 둔다. 나머지 행은 원본 보존 상태로 유지한다.
+HISTORY_BODY_KINDS = {
+    *COMMON_BODY_KINDS,
+    *HISTORY_EVENT_BODY_KINDS,
+    *HISTORY_VERIFIED_SHARED_BODY_KINDS,
+}
+
+
+def _build_body_ui_maps(kinds: set[str], group_order: tuple[str, ...]):
+    path_to_kind: dict[tuple[str, str, str], str] = {}
+    for function in group_order:
+        for path, kind in BODY_PATH_TO_KIND.items():
+            if path[0] == function and kind in kinds:
+                path_to_kind[path] = kind
+    groups: dict[str, tuple[str, ...]] = {}
+    details: dict[tuple[str, str], tuple[str, ...]] = {}
+    for function, family, action in path_to_kind:
+        groups.setdefault(function, ())
+        if family not in groups[function]:
+            groups[function] += (family,)
+        details.setdefault((function, family), ())
+        if action not in details[(function, family)]:
+            details[(function, family)] += (action,)
+    return path_to_kind, groups, details, {kind: path for path, kind in path_to_kind.items()}
+
+
+DISCOVERY_BODY_PATH_TO_KIND, DISCOVERY_BODY_COMMAND_GROUPS, DISCOVERY_BODY_COMMAND_DETAILS, DISCOVERY_BODY_KIND_TO_PATH = _build_body_ui_maps(
+    DISCOVERY_BODY_KINDS,
+    ("표시·연출", "진행·등록", "상태 변경", "판정", "전투·미니게임", "시간", "흐름 제어"),
+)
+HISTORY_BODY_PATH_TO_KIND, HISTORY_BODY_COMMAND_GROUPS, HISTORY_BODY_COMMAND_DETAILS, HISTORY_BODY_KIND_TO_PATH = _build_body_ui_maps(
+    HISTORY_BODY_KINDS,
+    ("진행·등록", "상태 변경", "표시·연출", "흐름 제어", "판정", "전투·미니게임", "시간"),
+)
+
 
 def branch_target_label(kind: str) -> str:
     """Return the explicit condition under which a branch uses its target row."""
@@ -523,27 +769,99 @@ EVENT_RESULT_CODES = (
 )
 EVENT_RESULT_NAMES = dict(EVENT_RESULT_CODES)
 
-# 설명 탭의 본문 분류명은 BODY_PATH_TO_KIND에서 직접 생성한다. 분류 UI를
-# 바꾼 뒤 설명 탭에 예전 경로가 남는 문제를 막고, 선택 가능한 모든 경로를
-# 빠짐없이 안내하기 위한 구조다.
-CONDITION_COMMAND_GUIDE = (
-    ("조건", "실행 | 항상 실행", "조건 검사를 하지 않고 본문을 바로 실행합니다."),
-    ("조건", "위치 | 국가·도시·건물·문화권", "조건 계열에서 위치를 고른 뒤 판정할 위치 종류와 대상을 선택합니다. 현재 위치가 해당 대상에 속하는지 검사합니다."),
-    ("조건", "상태 | 아이템 소지·미소지", "상태 계열에서 소지 또는 미소지 판정을 고른 뒤 대상 아이템을 지정합니다."),
-    ("조건", "상태 | 힌트 활성·미활성", "상태 계열에서 활성 또는 미활성 판정을 고른 뒤 힌트를 지정합니다."),
-    ("조건", "날짜 | 기준 연도 이후·일치", "이후(포함)은 현재 연도가 기준 이상일 때, 일치는 현재 연도와 정확히 같을 때 통과합니다."),
-    ("조건", "날짜 | 특정 연·월·연도 범위", "특정 연·월은 월과 연도를, 연도 범위는 시작·종료 연도를 각각 입력해 검사합니다."),
-    ("조건", "확률 | 무작위 확률", "1 / 분모 확률로만 조건을 통과시킵니다."),
-    ("조건", "상태 | 인물 미조우·후원자 활성", "인물은 미조우·신원 미확인 상태(+0xF8가 0이 아님)인지, 후원자는 현재 사용 가능 플래그(bit 15)가 설정되어 있는지 검사합니다."),
-    ("조건", "상태 | 후원자 계약 없음", "현재 후원자 계약이 없을 때만 통과합니다."),
-    ("조건", "논리 | 또는 (OR)", "양옆 조건 중 하나가 참이면 통과합니다. OR 없이 이어진 조건은 모두 참이어야 합니다."),
+# 조건 설명은 선택 가능한 내부 조건명과 1:1로 둔다. 분류만 묶어서 설명하면
+# 반대 판정이나 새로 추가한 조건이 설명 탭에서 빠지므로, 아래 완전성 검사로
+# CONDITION_KINDS와 설명 표가 항상 함께 갱신되게 한다.
+CONDITION_KIND_GUIDE_DESCRIPTIONS = {
+    "항상 실행": "조건을 검사하지 않고 슬롯 본문을 바로 실행합니다.",
+    "국가": "현재 위치가 선택한 국가에 속할 때 실행합니다.",
+    "도시": "현재 위치의 도시가 선택한 도시와 같을 때 실행합니다.",
+    "건물": "현재 위치의 건물이 선택한 건물과 같을 때 실행합니다.",
+    "문화권": "현재 위치가 선택한 문화권에 속할 때 실행합니다.",
+    "아이템 소지": "선택한 아이템이 현재 소지품 목록에 있을 때 실행합니다.",
+    "아이템 비소지": "선택한 아이템이 현재 소지품 목록에 없을 때 실행합니다.",
+    "힌트 상태 활성": "선택한 힌트 상태가 활성일 때 실행합니다.",
+    "힌트 상태 미활성": "선택한 힌트 상태가 활성 상태가 아닐 때 실행합니다.",
+    "인물 조건": "선택한 인물이 미조우·신원 미확인 상태(+0xF8 값이 0이 아님)일 때 실행합니다.",
+    "후원자 조건": "선택한 후원자의 사용 가능 플래그(bit 15)가 설정되어 있을 때 실행합니다.",
+    "후원자 계약 없음": "현재 후원자 계약이 없을 때 실행합니다.",
+    "발견 기록 있음": "선택한 발견물의 두 진행 기록 중 하나 이상이 활성일 때 실행합니다.",
+    "발견 기록 없음": "선택한 발견물의 진행 기록이 모두 비활성일 때 실행합니다.",
+    "보고 완료": "선택한 발견물의 상태 마커에 보고 완료 비트(0x80)가 설정되어 있을 때 실행합니다. 단순 발견 상태에서는 실행하지 않습니다.",
+    "발견 후 경과 년수 (패치 필요)": "발견 후 지정 년수가 지났는지 검사합니다. 기본 한국어판 EXE는 연도 차이를 반대로 계산하므로 정상 동작하려면 해당 조건 계산 패치가 필요합니다.",
+    "도시 등장·활성": "선택한 도시의 미등장·비활성 플래그(0x0004)가 꺼져 있을 때 실행합니다.",
+    "도시 미등장·비활성": "선택한 도시의 미등장·비활성 플래그(0x0004)가 켜져 있을 때 실행합니다.",
+    "도시 국적 일치": "선택한 도시의 현재 소속이 선택한 국가·세력과 같을 때 실행합니다.",
+    "도시 국적 불일치": "선택한 도시의 현재 소속이 선택한 국가·세력과 다를 때 실행합니다.",
+    "현재 도시 시설 보유": "현재 도시에 선택한 시설이 설치되어 있을 때 실행합니다.",
+    "지정 도시 시설 보유": "선택한 도시에 선택한 시설이 설치되어 있을 때 실행합니다.",
+    "지정 도시 시설 미보유": "선택한 도시에 선택한 시설이 설치되어 있지 않을 때 실행합니다.",
+    "기준 연도 이후": "현재 연도가 입력한 기준 연도 이상일 때 실행합니다.",
+    "기준 연도 일치": "현재 연도가 입력한 기준 연도와 정확히 같을 때 실행합니다.",
+    "특정 연·월": "현재 연도가 입력한 기준 연도 이상일 때 실행합니다. 화면에서는 연도만 입력하고 형식상 존재하는 월 바이트는 1로 자동 저장합니다.",
+    "특정 연·월 일치": "현재 연도와 월이 입력한 연도·월과 모두 정확히 같을 때 실행합니다.",
+    "현재 월 일치": "현재 월이 입력한 월과 정확히 같을 때 실행합니다.",
+    "연도 범위": "현재 연도가 입력한 시작 연도부터 종료 연도 사이일 때 실행합니다.",
+    "상태값 초과": "선택한 상태값이 입력한 기준값보다 클 때 실행합니다.",
+    "상태값 이상": "선택한 상태값이 입력한 기준값보다 크거나 같을 때 실행합니다.",
+    "상태값 미만": "선택한 상태값이 입력한 기준값보다 작을 때 실행합니다.",
+    "상태값 이하": "선택한 상태값이 입력한 기준값보다 작거나 같을 때 실행합니다.",
+    "무작위 확률": "난수 판정이 성공할 때 실행합니다. 성공 확률은 1 / 입력한 분모입니다.",
+    "함대 선박 보유": "현재 함대의 선박 슬롯에 선박이 하나 이상 있을 때 실행합니다.",
+    "해상 이동 중": "현재 도시 밖에 있고 이동 방식이 해상 이동일 때 실행합니다.",
+    "육상 이동 중": "현재 도시 밖에 있고 이동 방식이 육상 이동일 때 실행합니다.",
+    "함대 선박 보유 (육상 이동 아님)": "현재 함대에 선박이 하나 이상 있고 육상 이동 상태가 아닐 때 실행합니다. 현재 도시 밖인지 여부는 검사하지 않습니다.",
+    "또는 (OR)": "앞뒤 조건을 OR로 연결합니다. OR 없이 이어진 조건은 모두 참이어야 합니다.",
+}
+_missing_condition_guide_kinds = set(CONDITION_KINDS) - set(CONDITION_KIND_GUIDE_DESCRIPTIONS)
+_extra_condition_guide_kinds = set(CONDITION_KIND_GUIDE_DESCRIPTIONS) - set(CONDITION_KINDS)
+if _missing_condition_guide_kinds or _extra_condition_guide_kinds:
+    raise RuntimeError(
+        "조건 설명 표 불일치: "
+        f"누락={sorted(_missing_condition_guide_kinds)}, "
+        f"미사용={sorted(_extra_condition_guide_kinds)}"
+    )
+
+# 원본 사용 여부는 "해당 파일에서 실행 가능" 여부와 다르다. 조건 설명에는
+# 파일별 분류와 함께 원본 사용 여부를 명시해 두 개념을 혼동하지 않게 한다.
+DISCOVERY_ORIGINAL_CONDITION_KINDS = {
+    "항상 실행", "힌트 상태 활성", "인물 조건", "무작위 확률", "또는 (OR)",
+}
+HISTORY_ORIGINAL_CONDITION_KINDS = {
+    "항상 실행", "특정 연·월", "특정 연·월 일치", "발견 기록 있음",
+    "발견 후 경과 년수 (패치 필요)", "도시 등장·활성", "도시 미등장·비활성",
+    "도시 국적 일치", "도시 국적 불일치",
+}
+
+
+def _condition_guide_description(kind: str, event_file_type: str) -> str:
+    description = CONDITION_KIND_GUIDE_DESCRIPTIONS[kind]
+    if event_file_type == EVENT_FILE_HISTORY:
+        used = kind in HISTORY_ORIGINAL_CONDITION_KINDS
+        filename = "HIST_EV.CDS"
+    else:
+        used = kind in DISCOVERY_ORIGINAL_CONDITION_KINDS
+        filename = "DISEV.CDS"
+    if used:
+        return f"{description} 원본 {filename}에서 사용이 확인됐습니다."
+    return f"{description} 공통 EXE 조건 처리기로 사용할 수 있지만 원본 {filename}에는 사용되지 않습니다."
+
+
+CONDITION_COMMAND_GUIDE = tuple(
+    ("조건", f"발견물 이벤트 | {group} | {subkind}", _condition_guide_description(kind, EVENT_FILE_DISCOVERY))
+    for (group, subkind), kind in CONDITION_GROUP_TO_KIND.items()
+)
+HISTORY_CONDITION_COMMAND_GUIDE = tuple(
+    ("조건", f"역사 이벤트 | {group} | {subkind}", _condition_guide_description(kind, EVENT_FILE_HISTORY))
+    for (group, subkind), kind in HISTORY_CONDITION_GROUP_TO_KIND.items()
 )
 
 BODY_KIND_GUIDE_DESCRIPTIONS = {
     "대사": "화자와 대사를 지정해 일반 대화창을 표시한 뒤 다음 행으로 진행합니다. 검사관 화자는 계약·동행 중인 검사관이 없으면 해당 행을 건너뜁니다.",
     "예/아니오 대사": "예·아니오 선택 대사를 표시하고 선택 결과를 저장합니다. 결과는 흐름 제어 | 이전 결과의 참·거짓 분기에서 사용합니다.",
     "다중 선택지 대사": "슬래시(/)로 구분한 선택지를 표시하고 선택값을 저장합니다. 흐름 제어 | 선택지에서 기대값과 비교할 수 있습니다.",
-    "도시 소문 등록": "현재 날짜와 지정 도시를 붙여 소문·기록 로그에 문자열을 등록합니다. 일반 대화창 출력은 아닙니다.",
+    "도시 소문 등록": "문자열을 즉시 표시하지 않고 지정 도시의 이벤트 소문으로 등록합니다. 등록된 소문은 180일 동안 해당 도시의 무작위 소문 후보로 사용됩니다.",
+    "문화권 소문 등록": "문자열을 즉시 표시하지 않고 선택한 문화권에 속한 모든 도시에 이벤트 소문으로 각각 등록합니다. 등록된 소문은 180일 동안 각 도시의 무작위 소문 후보로 사용됩니다.",
     "AVI 재생": "AVI 파일과 연결 발견물 이름을 목록에서 선택해 동영상을 재생합니다. 표시 버튼으로 팝업 미리보기를 열 수 있습니다.",
     "발견물 등록/발견 처리": "대상 발견물을 등록하고 발견 완료 상태로 처리합니다.",
     "아이템 획득": "발견 보상에 연결된 아이템 획득 상태를 처리합니다.",
@@ -563,10 +881,14 @@ BODY_KIND_GUIDE_DESCRIPTIONS = {
     "이벤트 내부 참조": "파트 시작 주소에 저장된 u16 오프셋을 더한 위치로 무조건 이동합니다. 유효한 명령 목적지는 행 번호로 표시하고 저장할 때 오프셋을 다시 계산합니다.",
     "델포이 신탁 출력": "주인공의 비중립 성격, 자녀 적성, 배우자 정보와 남은 수명 경고를 신탁 메시지로 출력합니다. 성격값은 바꾸지 않습니다.",
     "힌트 획득": "지정한 발견물 힌트를 활성화해 이후 힌트 조건과 발견 이벤트에서 사용할 수 있게 합니다.",
+    HINT_REGISTER_COMMAND_KIND: "지정한 발견물 힌트에 등장 플래그(0x08)를 설정해 미획득 상태로 등록합니다. 힌트를 즉시 획득하거나 활성 조건을 참으로 만들지는 않습니다.",
+    CITY_SIZE_INCREASE_COMMAND_KIND: "지정 도시의 규모 단계를 입력한 값만큼 증가시킵니다. 실행 결과는 게임에서 0~7 범위로 제한됩니다.",
+    CITY_SIZE_DECREASE_COMMAND_KIND: "지정 도시의 규모 단계를 입력한 값만큼 감소시킵니다. 실행 결과는 게임에서 0~7 범위로 제한됩니다.",
     "대기": "입력한 초만큼 다음 명령 실행을 멈춥니다. 값 1은 1초입니다.",
     "날짜 경과": "고정 일수 또는 입력한 범위에서 뽑은 무작위 일수만큼 게임 날짜를 진행합니다.",
     "발견물 이름 입력 대기": "게임에서 이름 입력창을 열고 입력을 기다립니다. 입력 문자열 뒤에 값 문자열을 붙여 발견물 이름으로 저장합니다.",
     "발견물 이름 강제 입력": "입력창을 열지 않고 값 문자열을 발견물 이름으로 즉시 설정합니다.",
+    CITY_DISCOVERY_COMMAND_KIND: "지정 도시의 미등장·비활성 상태를 해제하고 도시 발견 알림을 처리합니다. 특수 개방 대상이 아닌 일반 도시는 변경하지 않습니다.",
     "신도시 생성": "제거·비활성 상태인 지정 도시를 생성·활성화합니다.",
     "이미지 표시 종료": "현재 표시 중인 이미지를 닫고 다음 명령으로 진행합니다.",
     "대화창 숨김": "현재 대화창을 잠시 숨깁니다.",
@@ -579,14 +901,18 @@ BODY_KIND_GUIDE_DESCRIPTIONS = {
     "상태값 증감": "선택한 상태값을 고정값 또는 무작위 범위 값만큼 증가·감소시킵니다.",
     "상태값 설정": "선택한 상태값을 고정값 또는 무작위 범위 값으로 직접 설정합니다.",
     "상태값 참조 증가": "선택한 상태값에 주인공의 소심↔거만 성격 축 계산값(0·1·2)을 더합니다. 종류 코드 19는 상태값 ID가 아니라 계산값 피연산자입니다.",
+    NATION_CREATION_COMMAND_KIND: "선택한 국가·세력의 런타임 상태를 1로 설정해 게임 세계에 생성·등장시킵니다. 이후 도시 소속을 해당 국가로 이전하는 명령과 함께 사용됩니다.",
     "국가 멸망 처리": "선택한 국가·세력의 런타임 상태를 2(멸망)로 설정합니다. 예: 72 아즈텍 왕국, 77 잉카 제국.",
     "특수 상태 처리": "현재 투입 인원(대원 또는 선원)을 올림하여 절반으로 설정합니다.",
     "인물 상태 처리 1": "선택한 인물 런타임 레코드의 +0xF8을 0으로 만들어 이미 조우했거나 정체를 확인한 상태로 기록합니다. 인물 자체를 비활성화하지는 않습니다.",
     "인물 상태 처리 2": "선택한 인물을 통역으로 고용하거나 기존 통역과 교체합니다.",
     "도시 국적 변경": "선택한 도시의 소속 국가를 주인공의 국적으로 변경합니다.",
+    CITY_NATION_SET_COMMAND_KIND: "선택한 도시의 소속 국가를 지정 국가·세력으로 설정합니다. 대상 도시가 기존 국가의 수도이면 같은 기존 국가 소속 도시 전체가 함께 이전됩니다.",
+    CITY_STATUS_SET_COMMAND_KIND: "선택한 도시의 상태를 통상·전염병·기근·전쟁·축제·대조선 등의 지정 상태로 설정합니다.",
     "도시 점령지 설정": "선택한 도시를 점령지 상태로 설정합니다. 도시 국적 변경과는 별도입니다.",
     "도시 점령지 해제": "선택한 도시의 점령지 상태를 해제합니다.",
     "도시 제거": "선택한 도시를 제거·비활성화해 도시 목록과 교역 처리 대상에서 제외합니다.",
+    CITY_FACILITY_ADD_COMMAND_KIND: "선택한 도시의 시설 마스크에 지정 시설을 추가합니다.",
     "도시 시설 제거": "선택한 도시의 시설 마스크에서 지정 시설을 제거합니다.",
     "이벤트 대상 도시 이동": "현재 이벤트 실행 대상의 소속 도시와 좌표를 선택한 도시로 옮깁니다.",
     "이벤트 결과 코드": "완료(0), 실패(1), 미처리(2)를 기록하고 현재 이벤트를 끝냅니다. 미처리만 처리 완료 비트를 남기지 않습니다.",
@@ -637,10 +963,39 @@ _missing_body_guide_kinds = set(BODY_COMMAND_KINDS) - set(BODY_KIND_GUIDE_DESCRI
 if _missing_body_guide_kinds:
     raise RuntimeError(f"본문 명령 설명 누락: {sorted(_missing_body_guide_kinds)}")
 
+def _scoped_body_guide_description(path: tuple[str, str, str], kind: str, event_file_type: str) -> str:
+    description = _body_guide_description(path, kind)
+    if kind in COMMON_BODY_KINDS:
+        return f"{description} 양쪽 원본 파일의 사용례와 재인코딩을 확인한 공통 명령입니다."
+    if event_file_type == EVENT_FILE_HISTORY:
+        if kind in HISTORY_EVENT_BODY_KINDS:
+            return f"{description} 역사 이벤트 원본에서 확인한 명령입니다."
+        return f"{description} 원본 HIST_EV.CDS에는 없지만 공통 EXE 처리기와 재인코딩을 확인했습니다."
+    return f"{description} 발견물 이벤트 명령으로 분류됩니다."
+
+
 BODY_COMMAND_GUIDE = tuple(
-    ("본문", " | ".join(path), _body_guide_description(path, kind))
-    for path, kind in BODY_PATH_TO_KIND.items()
+    (
+        "본문",
+        " | ".join(("공통" if kind in COMMON_BODY_KINDS else "발견물 이벤트", *path)),
+        _scoped_body_guide_description(path, kind, EVENT_FILE_DISCOVERY),
+    )
+    for path, kind in DISCOVERY_BODY_PATH_TO_KIND.items()
 )
+HISTORY_BODY_COMMAND_GUIDE = tuple(
+    (
+        "본문",
+        " | ".join((
+            "공통" if kind in COMMON_BODY_KINDS else
+            "역사 이벤트" if kind in HISTORY_EVENT_BODY_KINDS else
+            "공통 처리기",
+            *path,
+        )),
+        _scoped_body_guide_description(path, kind, EVENT_FILE_HISTORY),
+    )
+    for path, kind in HISTORY_BODY_PATH_TO_KIND.items()
+)
+HISTORY_COMMAND_GUIDE = HISTORY_CONDITION_COMMAND_GUIDE + HISTORY_BODY_COMMAND_GUIDE
 
 COMMAND_GUIDE = CONDITION_COMMAND_GUIDE + BODY_COMMAND_GUIDE
 HIDDEN_COMMAND_GUIDES = frozenset()
@@ -940,24 +1295,30 @@ def rebuild_archive(
     entries: list[disev.ArchiveEntry],
     decoded_parts: list[bytes],
     modified: set[int],
+    source_indices: list[int | None] | None = None,
 ) -> bytes:
-    if len(entries) != len(decoded_parts):
-        raise ValueError("파트 테이블과 편집 데이터의 개수가 다릅니다.")
+    if source_indices is None:
+        source_indices = list(range(len(entries)))
+    if len(source_indices) != len(decoded_parts):
+        raise ValueError("파트 원본 연결 정보와 편집 데이터의 개수가 다릅니다.")
 
     blobs: list[bytes] = []
     metadata: list[tuple[int, int]] = []
-    for index, (entry, decoded) in enumerate(zip(entries, decoded_parts)):
-        if index in modified:
+    for index, (source_index, decoded) in enumerate(zip(source_indices, decoded_parts)):
+        if source_index is None or index in modified:
             blobs.append(decoded)
             metadata.append((len(decoded), len(decoded)))
         else:
+            if not 0 <= source_index < len(entries):
+                raise ValueError(f"파트 {index}의 원본 연결 번호가 올바르지 않습니다.")
+            entry = entries[source_index]
             blob = original[
                 entry.payload_offset : entry.payload_offset + entry.compressed
             ]
             blobs.append(blob)
             metadata.append((entry.compressed, entry.uncompressed))
 
-    table_end = 0x110 + len(entries) * 12 + 4
+    table_end = 0x110 + len(decoded_parts) * 12 + 4
     output = bytearray(original[:0x110])
     payload_offset = table_end
     for (compressed, uncompressed), blob in zip(metadata, blobs):
@@ -980,7 +1341,7 @@ def verify_archive(data: bytes, expected_parts: list[bytes]) -> None:
         disev.validate_part(actual, index)
 
 
-class DisevEditor:
+class EventEditor:
     # 기본 창 폭(1180px)에서 약 1/5가 되도록 발견물 목록은 고정 폭으로 둔다.
     # 창을 넓힐 때 추가 폭은 오른쪽 편집 영역에만 배분한다.
     DISCOVERY_PANEL_WIDTH = 240
@@ -1005,15 +1366,18 @@ class DisevEditor:
         self._splash_image: ImageTk.PhotoImage | None = None
 
         self.disev_path: Path | None = None
+        self.event_file_type: str | None = None
         self.exe_path: Path | None = None
         self.archive = b""
         self.entries: list[disev.ArchiveEntry] = []
         self.parts: list[bytes] = []
         self.original_parts: list[bytes] = []
+        self.part_source_indices: list[int | None] = []
         self.rows: list[disev.DiscoveryRow] = []
         self.discovery_part_map: dict[int, int] = {}
         self._script_media_name_cache: dict[str, dict[int, tuple[str, ...]]] = {}
         self.modified: set[int] = set()
+        self.structure_modified = False
         self.current_index: int | None = None
         self.current_discovery_id: int | None = None
         self.loading_editor = False
@@ -1053,15 +1417,19 @@ class DisevEditor:
         self.discovery_column_fit_after: str | None = None
         self.condition_action_var = tk.StringVar(value=ui("edit"))
         self.condition_insert_row_var = tk.StringVar()
-        self.condition_kind_var = tk.StringVar(value="실행")
-        self.condition_subkind_var = tk.StringVar(value="항상 실행")
+        initial_condition_group = next(iter(CONDITION_GROUPS))
+        self.condition_kind_var = tk.StringVar(value=initial_condition_group)
+        self.condition_subkind_var = tk.StringVar(value=CONDITION_GROUPS[initial_condition_group][0])
         self.condition_value_vars = (tk.StringVar(value="0"), tk.StringVar(value="0"))
         self.condition_value_labels: list[ttk.Label] = []
         self.condition_value_spins: list[ttk.Spinbox] = []
         self.condition_target_var = tk.StringVar()
+        self.condition_secondary_target_var = tk.StringVar()
         self.character_targets: list[tuple[int, str]] = self._load_condition_targets("character_database.json")
         self.sponsor_targets: list[tuple[int, str]] = self._load_condition_targets("sponsor_data.json")
-        self.discovery_targets: list[tuple[int, str]] = []
+        # HIST_EV도 02 0B 발견물 조건에서 같은 EXE 발견물 ID를 사용한다.
+        # EXE 매핑을 읽기 전에도 내장 마스터 이름표를 먼저 제공한다.
+        self.discovery_targets: list[tuple[int, str]] = self._load_discovery_targets([])
         self.item_targets: list[tuple[int, str]] = self._load_item_targets()
         self.trade_good_targets: list[tuple[int, str]] = self._load_trade_good_targets()
         self.city_targets: list[tuple[int, str]] = self._load_city_targets()
@@ -1072,6 +1440,14 @@ class DisevEditor:
         self.selected_condition_index: int | None = None
         self.body_tokens: list[dict[str, object]] = []
         self.selected_body_index: int | None = None
+        # 파트 안의 각 슬롯은 조건 청크와 본문 청크를 한 쌍으로 가진다.
+        # 화면에는 한 슬롯만 올리고, 탭을 바꿀 때 현재 편집 내용을 이 초안에
+        # 되돌려 놓는다. 그래야 슬롯 수가 늘어나도 기존 편집 UI를 재사용할 수 있다.
+        self.slot_drafts: list[dict[str, object]] = []
+        self.current_slot_index: int | None = None
+        self._slot_tab_frames: list[ttk.Frame] = []
+        self._slot_tab_rebuilding = False
+        self._slot_close_images: tuple[tk.PhotoImage, ...] = ()
         self.body_action_var = tk.StringVar(value=ui("edit"))
         self.body_insert_row_var = tk.StringVar()
         self.body_command_var = tk.StringVar(value="-")
@@ -1090,8 +1466,10 @@ class DisevEditor:
         self.body_item_var = tk.StringVar()
         self.body_trade_good_var = tk.StringVar()
         self.body_city_var = tk.StringVar()
+        self.body_culture_var = tk.StringVar()
         self.body_building_var = tk.StringVar()
         self.body_nation_var = tk.StringVar()
+        self.body_city_status_var = tk.StringVar(value=CITY_STATUS_NAMES[0])
         self.body_stat_target_var = tk.StringVar()
         self.body_source_stat_var = tk.StringVar()
         self.body_battlefield_var = tk.StringVar(value=BATTLEFIELD_SUBKINDS[0])
@@ -1109,7 +1487,11 @@ class DisevEditor:
         self.theme_names = tuple(ttk.Style(self.root).theme_names())
         default_theme = self.theme_names[0] if self.theme_names else "clam"
         self.theme_var = tk.StringVar(
-            value=_load_saved_theme("disev_editor_theme", self.theme_names) or default_theme
+            value=(
+                _load_saved_theme("event_editor_theme", self.theme_names)
+                or _load_saved_theme("disev_editor_theme", self.theme_names)
+                or default_theme
+            )
         )
         self.dialogue_speakers = {
             "화자 없음": b"",
@@ -1126,6 +1508,7 @@ class DisevEditor:
             self.condition_kind_combo,
             self.condition_subkind_combo,
             self.condition_target_combo,
+            self.condition_secondary_target_combo,
             self.body_kind_combo,
             self.body_action_combo,
             self.body_subkind_combo,
@@ -1272,13 +1655,75 @@ class DisevEditor:
         # 색상은 고정하지 않고 선택한 Tk 테마의 기본 팔레트를 그대로 따른다.
         style.configure(".", font=("Malgun Gothic", 9))
         style.configure("TNotebook.Tab", padding=[10, 4], font=("Malgun Gothic", 9))
+        self._configure_slot_notebook_styles(style)
         style.configure("Treeview", rowheight=22, font=("Malgun Gothic", 9))
         style.configure("Treeview.Heading", font=("Malgun Gothic", 9, "bold"))
+
+    def _configure_slot_notebook_styles(self, style: ttk.Style) -> None:
+        """슬롯이 둘 이상일 때만 탭 오른쪽에 실제 닫기 요소를 붙인다."""
+        if not self._slot_close_images:
+            normal = tk.PhotoImage(master=self.root, width=10, height=10)
+            active = tk.PhotoImage(master=self.root, width=10, height=10)
+            pressed = tk.PhotoImage(master=self.root, width=10, height=10)
+            transparent = tk.PhotoImage(master=self.root, width=10, height=10)
+            for image, color in (
+                (normal, "#606060"),
+                (active, "#d23b3b"),
+                (pressed, "#a51f1f"),
+            ):
+                for point in range(2, 8):
+                    image.put(color, (point, point))
+                    image.put(color, (9 - point, point))
+            self._slot_close_images = (normal, active, pressed, transparent)
+
+        normal, active, pressed, transparent = self._slot_close_images
+        try:
+            style.element_create(
+                "SlotNotebook.close",
+                "image",
+                normal,
+                ("disabled", transparent),
+                ("pressed", pressed),
+                ("active", active),
+                border=0,
+                sticky="",
+            )
+        except tk.TclError:
+            # 테마 변경 때는 이미 만든 사용자 요소를 그대로 재사용한다.
+            pass
+
+        close_tab_layout = [
+            ("Slot.TNotebook.tab", {
+                "sticky": "nswe",
+                "children": [
+                    ("Slot.TNotebook.padding", {
+                        "side": "top",
+                        "sticky": "nswe",
+                        "children": [
+                            ("Slot.TNotebook.focus", {
+                                "side": "top",
+                                "sticky": "nswe",
+                                "children": [
+                                    ("Slot.TNotebook.label", {"side": "left", "sticky": ""}),
+                                    ("SlotNotebook.close", {"side": "left", "sticky": ""}),
+                                ],
+                            }),
+                        ],
+                    }),
+                ],
+            }),
+        ]
+        style.layout("Slot.TNotebook.Tab", close_tab_layout)
+        style.configure("Slot.TNotebook.Tab", padding=(10, 4, 6, 4), font=("Malgun Gothic", 9))
+        # 슬롯이 하나일 때는 기본 탭 레이아웃을 복제해 닫기 요소 자체를 없앤다.
+        style.layout("SlotNoClose.TNotebook", style.layout("TNotebook"))
+        style.layout("SlotNoClose.TNotebook.Tab", style.layout("TNotebook.Tab"))
+        style.configure("SlotNoClose.TNotebook.Tab", padding=(10, 4), font=("Malgun Gothic", 9))
 
     def _change_theme(self, _event: tk.Event | None = None) -> None:
         self._configure_styles(self.theme_var.get())
         self.root.after_idle(self._autosize_all_comboboxes)
-        _save_theme("disev_editor_theme", self.theme_var.get())
+        _save_theme("event_editor_theme", self.theme_var.get())
 
     @staticmethod
     def _cycle_combobox(event: tk.Event) -> str | None:
@@ -1382,12 +1827,35 @@ class DisevEditor:
         self.tree.bind("<<TreeviewSelect>>", self._select_part)
         self._enable_tree_zebra(self.tree)
 
+        part_buttons = ttk.Frame(left)
+        part_buttons.pack(fill="x", pady=(6, 0))
+        self.part_add_button = ttk.Button(
+            part_buttons, text="추가", command=self._add_part,
+        )
+        self.part_add_button.pack(side="left", fill="x", expand=True, padx=(0, 3))
+        self.part_remove_button = ttk.Button(
+            part_buttons, text="제거", command=self._remove_part,
+        )
+        self.part_remove_button.pack(side="left", fill="x", expand=True, padx=(3, 0))
+
         right_tabs = ttk.Notebook(right)
         right_tabs.pack(fill="both", expand=True)
         edit_tab = ttk.Frame(right_tabs, padding=8)
         guide_tab = ttk.Frame(right_tabs, padding=8)
         right_tabs.add(edit_tab, text=ui("edit_tab"))
         right_tabs.add(guide_tab, text=ui("guide_tab"))
+
+        # 슬롯 탭은 편집기의 조건/명령 영역을 공유한다. 내용 영역 높이는 1로
+        # 두어 탭 선택기만 보이게 하고, 마지막 '+' 탭은 슬롯 추가 동작으로 쓴다.
+        self.slot_notebook = ttk.Notebook(
+            edit_tab, style="SlotNoClose.TNotebook", height=1, padding=0,
+        )
+        self.slot_notebook.pack(fill="x", pady=(0, 6))
+        self.slot_notebook.bind("<ButtonPress-1>", self._slot_tab_pressed)
+        self.slot_notebook.bind("<<NotebookTabChanged>>", self._slot_tab_changed)
+        # LS12 파트는 최소 한 슬롯을 가지므로 파일을 열기 전에도 기본 구조를
+        # 미리 보여 준다. 실제 데이터가 없을 때는 아래 _set_edit_state에서 잠긴다.
+        self._rebuild_slot_tabs()
 
         chunks = ttk.Panedwindow(edit_tab, orient="vertical")
         chunks.pack(fill="both", expand=True, pady=(0, 7))
@@ -1455,6 +1923,13 @@ class DisevEditor:
             textvariable=self.condition_target_var,
             state="readonly",
             width=31,
+        )
+        self.condition_secondary_target_label = ttk.Label(condition_builder, text="도시:")
+        self.condition_secondary_target_combo = ttk.Combobox(
+            condition_builder,
+            textvariable=self.condition_secondary_target_var,
+            state="readonly",
+            width=24,
         )
         self.condition_summary_var = tk.StringVar(value=ui("always_execute"))
         condition_builder.columnconfigure(7, weight=1)
@@ -1559,8 +2034,36 @@ class DisevEditor:
         selected = self.guide_filter_var.get()
         tree = self.command_guide_tree
         tree.delete(*tree.get_children())
-        for index, row in enumerate(COMMAND_GUIDE):
-            if row[1] in HIDDEN_COMMAND_GUIDES or (selected != "전체" and row[0] != selected):
+        if self.event_file_type is None:
+            self.guide_filter_combo.configure(state="disabled")
+            tree.insert(
+                "", "end", iid="guide-message",
+                values=("안내", "-", "이벤트 파일을 열면 해당 파일의 조건·명령 설명을 표시합니다."),
+            )
+            self.root.after_idle(self._fit_command_guide_columns)
+            return
+
+        if self.event_file_type == EVENT_FILE_HISTORY:
+            # 역사 이벤트 흐름에 맞춘 조건 분류와 HIST_EV에서 안전하게
+            # 편집 가능한 명령만 표시한다.
+            self.guide_filter_combo.configure(
+                values=(ui("all"), ui("condition"), ui("body")), state="readonly",
+            )
+            if selected not in (ui("all"), ui("condition"), ui("body")):
+                selected = ui("all")
+                self.guide_filter_var.set(selected)
+            guide_rows = HISTORY_COMMAND_GUIDE
+        else:
+            self.guide_filter_combo.configure(
+                values=(ui("all"), ui("condition"), ui("body")), state="readonly",
+            )
+            if selected not in (ui("all"), ui("condition"), ui("body")):
+                selected = ui("all")
+                self.guide_filter_var.set(selected)
+            guide_rows = COMMAND_GUIDE
+
+        for index, row in enumerate(guide_rows):
+            if row[1] in HIDDEN_COMMAND_GUIDES or (selected != ui("all") and row[0] != selected):
                 continue
             tree.insert("", "end", iid=f"guide-{index}", values=row)
         self.root.after_idle(self._fit_command_guide_columns)
@@ -1935,14 +2438,23 @@ class DisevEditor:
 
     def _set_edit_state(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
+        if hasattr(self, "slot_notebook"):
+            self.slot_notebook.state(("!disabled",) if enabled else ("disabled",))
+        if hasattr(self, "part_add_button"):
+            self.part_add_button.configure(state=state)
+            self.part_remove_button.configure(
+                state="normal" if enabled and len(self.parts) > 1 else "disabled",
+            )
         self.condition_kind_combo.configure(state="readonly" if enabled else "disabled")
-        self.condition_subkind_combo.configure(state="readonly" if enabled and CONDITION_GROUPS.get(self.condition_kind_var.get()) else "disabled")
+        condition_groups = self._active_condition_groups()
+        self.condition_subkind_combo.configure(state="readonly" if enabled and condition_groups.get(self.condition_kind_var.get()) else "disabled")
         self.condition_action_combo.configure(state="readonly" if enabled else "disabled")
         self.condition_apply_button.configure(state=state)
         self.condition_insert_row_entry.configure(state=state)
         for spin in self.condition_value_spins:
             spin.configure(state=state)
         self.condition_target_combo.configure(state="readonly" if enabled else "disabled")
+        self.condition_secondary_target_combo.configure(state="readonly" if enabled else "disabled")
 
     def _condition_action_changed(self, _event=None) -> None:
         """추가·전체 비우기 외의 작업에서는 대상 조건 행을 받는다."""
@@ -2083,7 +2595,7 @@ class DisevEditor:
     @staticmethod
     def _load_condition_targets(filename: str) -> list[tuple[int, str]]:
         """Load the already EXE-extracted target tables used by opcode 37."""
-        path = DisevEditor._resource_data_dir() / filename
+        path = EventEditor._resource_data_dir() / filename
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             targets = [(int(record["id"]), str(record["name"])) for record in data["records"]]
@@ -2105,7 +2617,7 @@ class DisevEditor:
     @staticmethod
     def _load_item_targets() -> list[tuple[int, str]]:
         """아이템 ID를 이름으로 표시한다. 발견물 보상 아이템은 발견물명을 사용한다."""
-        data_dir = DisevEditor._resource_data_dir()
+        data_dir = EventEditor._resource_data_dir()
         path = data_dir / "master_data.json"
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
@@ -2149,7 +2661,7 @@ class DisevEditor:
 
     @staticmethod
     def _load_city_targets() -> list[tuple[int, str]]:
-        path = DisevEditor._resource_data_dir() / "city_data.json"
+        path = EventEditor._resource_data_dir() / "city_data.json"
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             return [(int(record["index"]), str(record["name"])) for record in data["records"]]
@@ -2159,7 +2671,7 @@ class DisevEditor:
     @staticmethod
     def _load_trade_good_targets() -> list[tuple[int, str]]:
         """EXE의 70개 교역품 ID와 이름을 콤보박스용으로 불러온다."""
-        path = DisevEditor._resource_data_dir() / "trade_goods.json"
+        path = EventEditor._resource_data_dir() / "trade_goods.json"
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             return [(int(record["id"]), str(record["name"])) for record in data["records"]]
@@ -2169,7 +2681,7 @@ class DisevEditor:
     @staticmethod
     def _load_nation_targets() -> list[tuple[int, str]]:
         try:
-            path = DisevEditor._resource_data_dir() / "master_data.json"
+            path = EventEditor._resource_data_dir() / "master_data.json"
             names = json.loads(path.read_text(encoding="utf-8"))["nation_names"]
             return [(index, str(name)) for index, name in enumerate(names) if name]
         except (OSError, ValueError, KeyError, TypeError):
@@ -2178,7 +2690,7 @@ class DisevEditor:
     @staticmethod
     def _load_building_targets() -> list[tuple[int, str]]:
         try:
-            path = DisevEditor._resource_data_dir() / "city_data.json"
+            path = EventEditor._resource_data_dir() / "city_data.json"
             names = json.loads(path.read_text(encoding="utf-8"))["facility_names"]
             return [(int(item_id), str(name)) for item_id, name in names.items() if name]
         except (OSError, ValueError, KeyError, TypeError):
@@ -2188,7 +2700,7 @@ class DisevEditor:
     def _load_culture_targets() -> list[tuple[int, str]]:
         """17 19 조건이 비교하는 현재 위치 객체의 문화권 ID 표를 읽는다."""
         try:
-            path = DisevEditor._resource_data_dir() / "game_strings.json"
+            path = EventEditor._resource_data_dir() / "game_strings.json"
             records = json.loads(path.read_text(encoding="utf-8"))["city_cultures"]
             return [(int(record["id"]), str(record["name"])) for record in records]
         except (OSError, ValueError, KeyError, TypeError):
@@ -2202,7 +2714,7 @@ class DisevEditor:
         배열을 공유한다. 이 레코드들은 EXE의 일반 발견물명 포인터가 비어
         있으므로 교역품 연결표에서 이름을 보완한다.
         """
-        data_dir = DisevEditor._resource_data_dir()
+        data_dir = EventEditor._resource_data_dir()
         try:
             master = json.loads((data_dir / "master_data.json").read_text(encoding="utf-8"))
             goods = json.loads((data_dir / "trade_goods.json").read_text(encoding="utf-8"))
@@ -2268,7 +2780,44 @@ class DisevEditor:
     def _builder_condition_kind(self) -> str:
         """Return the original bytecode condition name selected by the grouped UI."""
         group = self.condition_kind_var.get()
-        return CONDITION_GROUP_TO_KIND.get((group, self.condition_subkind_var.get()), group)
+        return self._active_condition_group_to_kind().get((group, self.condition_subkind_var.get()), group)
+
+    def _active_condition_groups(self) -> dict[str, tuple[str, ...]]:
+        return HISTORY_CONDITION_GROUPS if self.event_file_type == EVENT_FILE_HISTORY else CONDITION_GROUPS
+
+    def _active_condition_group_to_kind(self) -> dict[tuple[str, str], str]:
+        return HISTORY_CONDITION_GROUP_TO_KIND if self.event_file_type == EVENT_FILE_HISTORY else CONDITION_GROUP_TO_KIND
+
+    def _active_condition_kind_to_group(self) -> dict[str, tuple[str, str]]:
+        return HISTORY_CONDITION_KIND_TO_GROUP if self.event_file_type == EVENT_FILE_HISTORY else CONDITION_KIND_TO_GROUP
+
+    def _active_body_maps(self):
+        if self.event_file_type == EVENT_FILE_HISTORY:
+            return (
+                HISTORY_BODY_COMMAND_GROUPS, HISTORY_BODY_COMMAND_DETAILS,
+                HISTORY_BODY_PATH_TO_KIND, HISTORY_BODY_KIND_TO_PATH,
+            )
+        return (
+            DISCOVERY_BODY_COMMAND_GROUPS, DISCOVERY_BODY_COMMAND_DETAILS,
+            DISCOVERY_BODY_PATH_TO_KIND, DISCOVERY_BODY_KIND_TO_PATH,
+        )
+
+    def _configure_event_editor_schema(self) -> None:
+        """Switch the builder choices to the command set verified for the opened file."""
+        condition_groups = self._active_condition_groups()
+        self.condition_kind_combo.configure(values=tuple(condition_groups))
+        if self.condition_kind_var.get() not in condition_groups:
+            self.condition_kind_var.set(next(iter(condition_groups)))
+            self.condition_subkind_var.set("")
+        self._condition_kind_changed()
+
+        body_groups, _details, _paths, _reverse = self._active_body_maps()
+        self.body_kind_combo.configure(values=tuple(body_groups))
+        if self.body_command_var.get() not in body_groups:
+            self.body_command_var.set(next(iter(body_groups), ""))
+            self.body_subkind_var.set("")
+            self.body_detail_var.set("")
+        self._body_kind_changed()
 
     def _condition_named_targets(self, kind: str) -> list[tuple[int, str]]:
         targets = {
@@ -2282,9 +2831,32 @@ class DisevEditor:
             "힌트 상태 미활성": self.hint_targets,
             "인물 조건": self.character_targets,
             "후원자 조건": self.sponsor_targets,
+            "발견 기록 있음": self.discovery_targets,
+            "발견 기록 없음": self.discovery_targets,
+            "보고 완료": self.discovery_targets,
+            "발견 후 경과 년수 (패치 필요)": self.discovery_targets,
+            "도시 등장·활성": self.city_targets,
+            "도시 미등장·비활성": self.city_targets,
+            "도시 국적 일치": self.nation_targets,
+            "도시 국적 불일치": self.nation_targets,
+            "현재 도시 시설 보유": self.building_targets,
+            "지정 도시 시설 보유": self.building_targets,
+            "지정 도시 시설 미보유": self.building_targets,
+            "상태값 초과": STAT_TARGETS,
+            "상태값 이상": STAT_TARGETS,
+            "상태값 미만": STAT_TARGETS,
+            "상태값 이하": STAT_TARGETS,
         }.get(kind, [])
         # -1은 발견물에 연결된 힌트가 없다는 표기이며 opcode의 u16 ID가 아니다.
         return [(target_id, name) for target_id, name in targets if target_id >= 0]
+
+    def _condition_secondary_named_targets(self, kind: str) -> list[tuple[int, str]]:
+        if kind in (
+            "도시 국적 일치", "도시 국적 불일치",
+            "지정 도시 시설 보유", "지정 도시 시설 미보유",
+        ):
+            return self.city_targets
+        return []
 
     def _refresh_condition_targets(self, kind: str) -> None:
         values = tuple(f"{item_id:03d} | {name}" for item_id, name in self._condition_named_targets(kind))
@@ -2295,9 +2867,21 @@ class DisevEditor:
         else:
             self.condition_target_var.set("")
 
+    def _refresh_condition_secondary_targets(self, kind: str) -> None:
+        values = tuple(
+            f"{item_id:03d} | {name}"
+            for item_id, name in self._condition_secondary_named_targets(kind)
+        )
+        self.condition_secondary_target_combo.configure(values=values)
+        self._autosize_combobox(self.condition_secondary_target_combo)
+        if values:
+            self.condition_secondary_target_var.set(values[0])
+        else:
+            self.condition_secondary_target_var.set("")
+
     def _condition_kind_changed(self, _event=None) -> None:
         group = self.condition_kind_var.get()
-        subkinds = CONDITION_GROUPS.get(group, ())
+        subkinds = self._active_condition_groups().get(group, ())
         self.condition_subkind_combo.configure(values=subkinds, state="readonly" if subkinds else "disabled")
         self._autosize_combobox(self.condition_kind_combo)
         self._autosize_combobox(self.condition_subkind_combo)
@@ -2314,12 +2898,24 @@ class DisevEditor:
         spec = CONDITION_KINDS[kind]
         fields = spec[0]
         named_targets = self._condition_named_targets(kind)
+        secondary_named_targets = self._condition_secondary_named_targets(kind)
+        # 이름 콤보와 추가 수치 피연산자를 함께 쓰는 조건(1B 0B)을 지원한다.
+        # 일반 이름 조건은 첫 ID 필드만 있으므로 아래 목록이 비어 기존과 같다.
+        named_field_count = int(bool(named_targets)) + int(bool(secondary_named_targets))
+        if kind == "특정 연·월":
+            # 1B 17의 월 바이트는 EXE 판정기가 읽고 버리므로 화면에는 연도만
+            # 노출한다. 새로 추가하거나 수정할 때 숨은 월 바이트는 항상 1이다.
+            value_fields = fields[1:]
+        else:
+            value_fields = fields[named_field_count:] if named_targets else fields
         for index, (label, spin) in enumerate(zip(self.condition_value_labels, self.condition_value_spins)):
-            if index < len(fields) and not named_targets:
-                title, minimum, maximum = fields[index]
+            if index < len(value_fields):
+                title, minimum, maximum = value_fields[index]
                 label.configure(text=f"{title}:")
                 spin.configure(from_=minimum, to=maximum)
                 base_column = 4 if subkinds else 2
+                if named_targets:
+                    base_column += 2 + (2 if secondary_named_targets else 0)
                 label.grid(row=0, column=base_column + index * 2, sticky="e")
                 spin.grid(row=0, column=base_column + index * 2 + 1, sticky="w", padx=(4, 8))
             else:
@@ -2327,14 +2923,46 @@ class DisevEditor:
                 spin.grid_remove()
         if named_targets:
             base_column = 4 if subkinds else 2
-            label_text = "힌트:" if kind.startswith("힌트") else "대상:"
+            if kind.startswith("힌트"):
+                label_text = "힌트:"
+            elif kind in ("발견 기록 있음", "발견 기록 없음", "보고 완료", "발견 후 경과 년수 (패치 필요)"):
+                label_text = "발견물:"
+            elif kind.startswith("도시 국적"):
+                label_text = "국가/세력:"
+            elif "시설" in kind:
+                label_text = "시설:"
+            elif kind.startswith("상태값"):
+                label_text = "상태값:"
+            elif kind.startswith("도시 "):
+                label_text = "도시:"
+            else:
+                label_text = "대상:"
             self.condition_target_label.configure(text=label_text)
             self.condition_target_label.grid(row=0, column=base_column, sticky="e")
-            self.condition_target_combo.grid(row=0, column=base_column + 1, columnspan=3, sticky="w", padx=(4, 8))
+            # 이름 뒤에 별도 수치 필드가 붙는 조건은 콤보가 다음 열을
+            # 차지하지 않도록 한 칸만 사용한다.
+            self.condition_target_combo.grid(
+                row=0,
+                column=base_column + 1,
+                columnspan=1 if value_fields or secondary_named_targets else 3,
+                sticky="w",
+                padx=(4, 8),
+            )
             self._refresh_condition_targets(kind)
         else:
             self.condition_target_label.grid_remove()
             self.condition_target_combo.grid_remove()
+        if secondary_named_targets:
+            base_column = 4 if subkinds else 2
+            self.condition_secondary_target_label.configure(text="도시:")
+            self.condition_secondary_target_label.grid(row=0, column=base_column + 2, sticky="e")
+            self.condition_secondary_target_combo.grid(
+                row=0, column=base_column + 3, sticky="w", padx=(4, 8),
+            )
+            self._refresh_condition_secondary_targets(kind)
+        else:
+            self.condition_secondary_target_label.grid_remove()
+            self.condition_secondary_target_combo.grid_remove()
         self.condition_summary_var.set("조건을 고른 뒤 [추가]를 누르세요. 조건을 나열하면 AND, '또는 (OR)'는 OR입니다.")
 
     def _decode_condition_tokens(self, condition: bytes) -> list[tuple[str, tuple[int, ...]]] | None:
@@ -2353,6 +2981,23 @@ class DisevEditor:
             if code.startswith(b"\x5A", offset):
                 tokens.append(("후원자 계약 없음", ()))
                 offset += 1
+                continue
+            single_byte_conditions = {
+                0x59: "함대 선박 보유",
+                0x5F: "해상 이동 중",
+                0x60: "육상 이동 중",
+                0x67: "함대 선박 보유 (육상 이동 아님)",
+            }
+            if code[offset] in single_byte_conditions:
+                tokens.append((single_byte_conditions[code[offset]], ()))
+                offset += 1
+                continue
+            if offset + 3 <= len(code) and code[offset : offset + 2] == b"\x5D\x17":
+                month = code[offset + 2]
+                if not 1 <= month <= 12:
+                    return None
+                tokens.append(("현재 월 일치", (month,)))
+                offset += 3
                 continue
             if offset + 4 <= len(code):
                 primary, secondary = code[offset], code[offset + 1]
@@ -2373,17 +3018,92 @@ class DisevEditor:
                     tokens.append(("인물 조건" if secondary == 0x0D else "후원자 조건", (value,)))
                     offset += 4
                     continue
+                if primary == 0x02 and secondary == 0x0B:
+                    tokens.append(("발견 기록 있음", (value,)))
+                    offset += 4
+                    continue
+                if primary == 0x3A and secondary == 0x0B:
+                    tokens.append(("발견 기록 없음", (value,)))
+                    offset += 4
+                    continue
+                if primary == 0x5E and secondary == 0x0B:
+                    tokens.append(("보고 완료", (value,)))
+                    offset += 4
+                    continue
+                if primary == 0x24 and secondary == 0x10:
+                    tokens.append(("현재 도시 시설 보유", (value,)))
+                    offset += 4
+                    continue
+                if primary in (0x27, 0x28) and secondary == 0x08:
+                    tokens.append(("도시 등장·활성" if primary == 0x27 else "도시 미등장·비활성", (value,)))
+                    offset += 4
+                    continue
                 if secondary == 0x16 and primary in (0x1B, 0x1C):
                     tokens.append(("기준 연도 이후" if primary == 0x1B else "기준 연도 일치", (value,)))
                     offset += 4
                     continue
-            if offset + 6 <= len(code) and code[offset : offset + 2] == b"\x1B\x17" and code[offset + 3] == 0x16:
-                tokens.append(("특정 연·월", (code[offset + 2], struct.unpack_from("<H", code, offset + 4)[0])))
+            if (
+                offset + 6 <= len(code)
+                and code[offset] in (0x1B, 0x1C)
+                and code[offset + 1] == 0x17
+                and code[offset + 3] == 0x16
+            ):
+                kind = "특정 연·월" if code[offset] == 0x1B else "특정 연·월 일치"
+                tokens.append((kind, (code[offset + 2], struct.unpack_from("<H", code, offset + 4)[0])))
                 offset += 6
+                continue
+            if (
+                offset + 7 <= len(code)
+                and code[offset : offset + 2] == b"\x1B\x0B"
+                and code[offset + 4] == 0x16
+            ):
+                discovery_id = struct.unpack_from("<H", code, offset + 2)[0]
+                years = struct.unpack_from("<H", code, offset + 5)[0]
+                tokens.append(("발견 후 경과 년수 (패치 필요)", (discovery_id, years)))
+                offset += 7
+                continue
+            if (
+                offset + 7 <= len(code)
+                and code[offset] in (0x27, 0x28)
+                and code[offset + 1] == 0x00
+                and code[offset + 4] == 0x08
+            ):
+                nation_id = struct.unpack_from("<H", code, offset + 2)[0]
+                city_id = struct.unpack_from("<H", code, offset + 5)[0]
+                kind = "도시 국적 일치" if code[offset] == 0x27 else "도시 국적 불일치"
+                tokens.append((kind, (nation_id, city_id)))
+                offset += 7
+                continue
+            if (
+                offset + 7 <= len(code)
+                and code[offset] in (0x27, 0x28)
+                and code[offset + 1] == 0x10
+                and code[offset + 4] == 0x08
+            ):
+                facility_id = struct.unpack_from("<H", code, offset + 2)[0]
+                city_id = struct.unpack_from("<H", code, offset + 5)[0]
+                kind = "지정 도시 시설 보유" if code[offset] == 0x27 else "지정 도시 시설 미보유"
+                tokens.append((kind, (facility_id, city_id)))
+                offset += 7
                 continue
             if offset + 7 <= len(code) and code[offset : offset + 2] == b"\x36\x16" and code[offset + 4] == 0x16:
                 tokens.append(("연도 범위", (struct.unpack_from("<H", code, offset + 2)[0], struct.unpack_from("<H", code, offset + 5)[0])))
                 offset += 7
+                continue
+            if (
+                offset + 9 <= len(code)
+                and code[offset] in (0x2A, 0x2B, 0x2C, 0x2D)
+                and code[offset + 1] == 0x1C
+                and code[offset + 4] == 0x1A
+            ):
+                stat_id = struct.unpack_from("<H", code, offset + 2)[0]
+                threshold = struct.unpack_from("<I", code, offset + 5)[0]
+                kind = {
+                    0x2A: "상태값 초과", 0x2B: "상태값 이상",
+                    0x2C: "상태값 미만", 0x2D: "상태값 이하",
+                }[code[offset]]
+                tokens.append((kind, (stat_id, threshold)))
+                offset += 9
                 continue
             if (
                 offset + 11 <= len(code)
@@ -2410,15 +3130,35 @@ class DisevEditor:
                          if candidate_id == target_id), None)
             # 목록은 스크립트를 읽기 위한 화면이므로 내부 ID 대신 이름을 보인다.
             # 이름 표가 없는 원본 ID만 예외적으로 그대로 남겨 손실을 알린다.
+            secondary_targets = self._condition_secondary_named_targets(kind)
+            if secondary_targets:
+                secondary_id = values[1]
+                secondary_name = next(
+                    (candidate_name for candidate_id, candidate_name in secondary_targets
+                     if candidate_id == secondary_id),
+                    None,
+                )
+                return (
+                    name if name is not None else str(target_id),
+                    secondary_name if secondary_name is not None else str(secondary_id),
+                )
+            if kind == "발견 후 경과 년수 (패치 필요)":
+                return name if name is not None else str(target_id), f"{values[1]}년"
+            if kind in ("상태값 초과", "상태값 이상", "상태값 미만", "상태값 이하"):
+                return name if name is not None else str(target_id), str(values[1])
             return name if name is not None else str(target_id), "-"
         if kind == "무작위 확률":
             return f"1 / {values[0]}", "-"
         if kind in ("기준 연도 이후", "기준 연도 일치"):
             return f"{values[0]}년", "-"
         if kind == "특정 연·월":
+            return f"{values[1]}년", "-"
+        if kind == "특정 연·월 일치":
             return f"{values[1]}년", f"{values[0]}월"
         if kind == "연도 범위":
             return f"{values[0]}년", f"{values[1]}년"
+        if kind == "현재 월 일치":
+            return f"{values[0]}월", "-"
         fields = CONDITION_KINDS[kind][0]
         if not fields:
             return "-", "-"
@@ -2432,7 +3172,7 @@ class DisevEditor:
         return separator.join(level for level in levels if level)
 
     def _condition_display_levels(self, kind: str) -> tuple[str, str]:
-        group, subkind = CONDITION_KIND_TO_GROUP.get(kind, (kind, ""))
+        group, subkind = self._active_condition_kind_to_group().get(kind, (kind, ""))
         return group, subkind
 
     def _refresh_condition_display(self, select_index: int | None = None) -> None:
@@ -2474,7 +3214,7 @@ class DisevEditor:
         if self.condition_action_var.get() in (ui("edit"), ui("remove")):
             self.condition_insert_row_var.set(str(index + 1))
         kind, values = self.condition_tokens[index]
-        group, subkind = CONDITION_KIND_TO_GROUP.get(kind, (kind, ""))
+        group, subkind = self._active_condition_kind_to_group().get(kind, (kind, ""))
         self.condition_kind_var.set(group)
         self.condition_subkind_var.set(subkind)
         self._condition_kind_changed()
@@ -2484,6 +3224,19 @@ class DisevEditor:
                 if str(candidate).startswith(prefix):
                     self.condition_target_var.set(candidate)
                     break
+            named_field_count = 1 + int(bool(self._condition_secondary_named_targets(kind)))
+            for value_index, value in enumerate(values[named_field_count:]):
+                self.condition_value_vars[value_index].set(str(value))
+            secondary_targets = self._condition_secondary_named_targets(kind)
+            if secondary_targets:
+                prefix = f"{values[1]:03d} |"
+                for candidate in self.condition_secondary_target_combo.cget("values"):
+                    if str(candidate).startswith(prefix):
+                        self.condition_secondary_target_var.set(candidate)
+                        break
+        elif kind == "특정 연·월":
+            # 월 바이트는 편집 대상이 아니므로 연도만 입력 컨트롤에 올린다.
+            self.condition_value_vars[0].set(str(values[1]))
         else:
             for value_index, value in enumerate(values):
                 self.condition_value_vars[value_index].set(str(value))
@@ -2501,7 +3254,8 @@ class DisevEditor:
         token = self.body_tokens[index]
         kind = str(token["kind"])
         value = token.get("value")
-        group, subkind, detail = BODY_KIND_TO_PATH.get(kind, (kind, "", ""))
+        body_groups, body_details, _body_paths, body_kind_to_path = self._active_body_maps()
+        group, subkind, detail = body_kind_to_path.get(kind, (kind, "", ""))
         if kind == "이벤트 판정":
             detail = MINIGAME_SUBKIND_BY_TYPE.get(int(value), "") if value is not None else ""
         elif kind == "특수 수치 판정":
@@ -2514,7 +3268,7 @@ class DisevEditor:
             detail = SPECIAL_ENCOUNTER_SUBKIND_BY_VALUE.get(
                 int(value), f"미확인 종류 ({value})",
             ) if value is not None else ""
-        self.body_command_var.set(group if group in BODY_COMMAND_GROUPS else "")
+        self.body_command_var.set(group if group in body_groups else "")
         self.body_subkind_var.set(subkind)
         self.body_detail_var.set(detail)
         if kind == "육상전 실행":
@@ -2550,6 +3304,8 @@ class DisevEditor:
         if kind == "소지금 비교 분기":
             self.body_value2_var.set(str(token["compare_value"]))
         editable = bool(token["editable"])
+        active_body_kinds = HISTORY_BODY_KINDS if self.event_file_type == EVENT_FILE_HISTORY else DISCOVERY_BODY_KINDS
+        editable = editable and group in body_groups and kind in active_body_kinds
         self._selected_body_original_kind = kind
         self._body_kind_change_from_selection = True
         try:
@@ -2564,6 +3320,8 @@ class DisevEditor:
             self._set_body_speaker(bytes(token.get("speaker_prefix", b"")))
         if kind == CITY_STRING_COMMAND_KIND:
             self._set_body_city(int(token["character_id"]))
+        if kind == CULTURE_STRING_COMMAND_KIND:
+            self._set_body_culture(int(token["character_id"]))
         if kind in DISCOVERY_NAME_COMMAND_KINDS:
             self._set_body_character(int(token["character_id"]))
         if kind == "발견물 등록/발견 처리":
@@ -2576,8 +3334,16 @@ class DisevEditor:
             self._set_body_npc(int(token["character_id"]))
         if kind in CITY_TARGET_COMMAND_KINDS:
             self._set_body_city(int(token["character_id"]))
-            if kind == "도시 시설 제거":
+            if kind in CITY_FACILITY_COMMAND_KINDS:
                 self._set_body_building(int(value))
+        if kind == CITY_NATION_SET_COMMAND_KIND:
+            self._set_body_city(int(token["character_id"]))
+            self._set_body_nation(int(token["nation_id"]))
+        if kind == CITY_STATUS_SET_COMMAND_KIND:
+            self._set_body_city(int(token["character_id"]))
+            self._set_body_city_status(int(token["status_id"]))
+        if kind in CITY_SIZE_COMMAND_KINDS:
+            self._set_body_city(int(token["character_id"]))
         if kind in ("아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리"):
             self._set_body_item(int(value))
         if kind == "교역품 활성화":
@@ -2586,7 +3352,7 @@ class DisevEditor:
             self._set_body_item(int(token["item_id"]))
         if kind == "신도시 생성":
             self._set_body_city(int(value))
-        if kind == "국가 멸망 처리":
+        if kind in NATION_STATE_COMMAND_KINDS:
             self._set_body_nation(int(value))
         if kind == RUNTIME_REFERENCE_BRANCH_KIND:
             self._set_body_nation(int(token["nation_id"]))
@@ -2618,7 +3384,7 @@ class DisevEditor:
         if kind == HINT_BRANCH_KIND:
             self._set_body_hint(int(token["hint_id"]))
             self.body_hint_state_var.set("활성" if token.get("hint_active", True) else "미활성")
-        if kind == "힌트 획득":
+        if kind in HINT_TARGET_COMMAND_KINDS:
             self._set_body_hint(int(value))
         if kind == DISCOVERY_BRANCH_KIND:
             self._set_body_character(int(token["character_id"]))
@@ -2635,9 +3401,9 @@ class DisevEditor:
             npc_type = int(token.get("npc_type", 0x0D))
             self._set_body_npc(int(token["character_id"]), self.sponsor_targets if npc_type == 0x12 else self.character_targets)
         self.body_kind_combo.configure(state="readonly" if editable else "disabled")
-        self.body_subkind_combo.configure(state="readonly" if editable and BODY_COMMAND_GROUPS.get(group) else "disabled")
+        self.body_subkind_combo.configure(state="readonly" if editable and body_groups.get(group) else "disabled")
         self.body_detail_combo.configure(
-            state="readonly" if editable and BODY_COMMAND_DETAILS.get((group, subkind)) else "disabled"
+            state="readonly" if editable and body_details.get((group, subkind)) else "disabled"
         )
         needs_value = kind not in ("음원 정지", "이미지 표시 종료", "대화창 숨김", "대화창 표시", "결과 거짓 설정", "게임 오버", "델포이 신탁 출력")
         self.body_value_entry.configure(state="normal" if editable and needs_value else "disabled")
@@ -2652,10 +3418,10 @@ class DisevEditor:
             state="readonly" if editable and kind in ("발견물 등록/발견 처리", DISCOVERY_BRANCH_KIND, NPC_BRANCH_KIND) else "disabled"
         )
         self.body_item_combo.configure(state="readonly" if editable and kind in ("아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리") else "disabled")
-        self.body_city_combo.configure(state="readonly" if editable and kind == "신도시 생성" else "disabled")
+        self.body_city_combo.configure(state="readonly" if editable and kind in ("신도시 생성", *CITY_SIZE_COMMAND_KINDS) else "disabled")
         self.body_stat_target_combo.configure(state="readonly" if editable and kind in STAT_COMMAND_KINDS + NUMERIC_COMPARE_BRANCH_KINDS else "disabled")
         self.body_hint_state_combo.configure(state="readonly" if editable and kind == HINT_BRANCH_KIND else "disabled")
-        self.body_hint_combo.configure(state="readonly" if editable and kind in (HINT_BRANCH_KIND, "힌트 획득") else "disabled")
+        self.body_hint_combo.configure(state="readonly" if editable and kind in (HINT_BRANCH_KIND, *HINT_TARGET_COMMAND_KINDS) else "disabled")
         self.status_var.set(ui("status_body_selected", index + 1))
 
     def _body_group_changed(self, _event=None) -> None:
@@ -2682,8 +3448,10 @@ class DisevEditor:
         self.body_item_var.set("")
         self.body_trade_good_var.set("")
         self.body_city_var.set("")
+        self.body_culture_var.set("")
         self.body_building_var.set("")
         self.body_nation_var.set("")
+        self.body_city_status_var.set("")
         self.body_stat_target_var.set("")
         self.body_source_stat_var.set("")
         self.body_hint_var.set("")
@@ -2693,7 +3461,8 @@ class DisevEditor:
 
     def _body_kind_changed(self, _event=None) -> None:
         group = self.body_command_var.get()
-        subkinds = BODY_COMMAND_GROUPS.get(group, ())
+        body_groups, body_details, body_paths, _body_kind_to_path = self._active_body_maps()
+        subkinds = body_groups.get(group, ())
         self.body_subkind_combo.configure(values=subkinds, state="readonly" if subkinds else "disabled")
         self._autosize_combobox(self.body_kind_combo)
         self._autosize_combobox(self.body_subkind_combo)
@@ -2701,7 +3470,7 @@ class DisevEditor:
             self.body_subkind_var.set(subkinds[0])
         elif not subkinds:
             self.body_subkind_var.set("")
-        detail_kinds = BODY_COMMAND_DETAILS.get((group, self.body_subkind_var.get()), ())
+        detail_kinds = body_details.get((group, self.body_subkind_var.get()), ())
         if (
             group == "판정"
             and self.body_subkind_var.get() == "주인공 능력치"
@@ -2723,7 +3492,7 @@ class DisevEditor:
             self.body_detail_var.set(detail_kinds[0])
         elif not detail_kinds:
             self.body_detail_var.set("")
-        kind = BODY_PATH_TO_KIND.get((group, self.body_subkind_var.get(), self.body_detail_var.get()))
+        kind = body_paths.get((group, self.body_subkind_var.get(), self.body_detail_var.get()))
         if kind is None and group == "판정" and self.body_subkind_var.get() == "주인공 능력치":
             kind = "이벤트 조건 판정"
         elif kind is None and group == "표시·연출" and self.body_subkind_var.get() == "특수 조우":
@@ -2783,7 +3552,7 @@ class DisevEditor:
         is_discovery_branch = kind in (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND)
         is_npc_branch = kind == NPC_BRANCH_KIND
         is_hint_branch = kind == HINT_BRANCH_KIND
-        is_hint_grant = kind == "힌트 획득"
+        is_hint_grant = kind in HINT_TARGET_COMMAND_KINDS
         is_choice_branch = kind == CHOICE_BRANCH_KIND
         is_special_value_check = kind == "특수 수치 판정"
         is_state_compare_branch = kind in NUMERIC_COMPARE_BRANCH_KINDS
@@ -3253,6 +4022,16 @@ class DisevEditor:
                 self._set_body_city(self.city_targets[0][0])
             final_value("문자열:", self.body_value_var, text_entry=True)
             return
+        if kind == CULTURE_STRING_COMMAND_KIND:
+            aux_label(0, "문화권:")
+            aux_combo(1, self.body_culture_var, tuple(
+                self._body_target_display(culture_id, name)
+                for culture_id, name in self.culture_targets
+            ))
+            if not self.body_culture_var.get() and self.culture_targets:
+                self._set_body_culture(self.culture_targets[0][0])
+            final_value("문자열:", self.body_value_var, text_entry=True)
+            return
         if kind in DISCOVERY_NAME_COMMAND_KINDS:
             aux_label(0, "대상 발견물:")
             aux_combo(1, self.body_character_var, tuple(
@@ -3326,7 +4105,7 @@ class DisevEditor:
             ))
             if not self.body_city_var.get() and self.city_targets:
                 self._set_body_city(self.city_targets[0][0])
-            if kind == "도시 시설 제거":
+            if kind in CITY_FACILITY_COMMAND_KINDS:
                 aux_label(2, "시설:")
                 aux_combo(3, self.body_building_var, tuple(
                     self._body_target_display(building_id, name)
@@ -3336,6 +4115,46 @@ class DisevEditor:
                     first_building = next((item for item in self.building_targets if 0 <= item[0] <= 15), None)
                     if first_building is not None:
                         self._set_body_building(first_building[0])
+            return
+        if kind == CITY_NATION_SET_COMMAND_KIND:
+            aux_label(0, "도시:")
+            aux_combo(1, self.body_city_var, tuple(
+                self._body_target_display(city_id, name) for city_id, name in self.city_targets
+            ))
+            aux_label(2, "새 소속 국가/세력:")
+            aux_combo(3, self.body_nation_var, tuple(
+                self._body_target_display(nation_id, name)
+                for nation_id, name in self.nation_targets
+            ))
+            if not self.body_city_var.get() and self.city_targets:
+                self._set_body_city(self.city_targets[0][0])
+            if not self.body_nation_var.get() and self.nation_targets:
+                self._set_body_nation(self.nation_targets[0][0])
+            return
+        if kind == CITY_STATUS_SET_COMMAND_KIND:
+            aux_label(0, "도시:")
+            aux_combo(1, self.body_city_var, tuple(
+                self._body_target_display(city_id, name) for city_id, name in self.city_targets
+            ))
+            aux_label(2, "도시 상태:")
+            aux_combo(3, self.body_city_status_var, tuple(
+                name for _status_id, name in CITY_STATUS_TYPES
+            ))
+            if not self.body_city_var.get() and self.city_targets:
+                self._set_body_city(self.city_targets[0][0])
+            if self.body_city_status_var.get() not in CITY_STATUS_IDS:
+                self._set_body_city_status(0)
+            return
+        if kind in CITY_SIZE_COMMAND_KINDS:
+            aux_label(0, "도시:")
+            aux_combo(1, self.body_city_var, tuple(
+                self._body_target_display(city_id, name) for city_id, name in self.city_targets
+            ))
+            if not self.body_city_var.get() and self.city_targets:
+                self._set_body_city(self.city_targets[0][0])
+            if not self.body_value_var.get().strip():
+                self.body_value_var.set("1")
+            final_value("변경 단계:", self.body_value_var)
             return
         if kind in ("아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리"):
             aux_label(0, "아이템:")
@@ -3366,7 +4185,7 @@ class DisevEditor:
                 self._body_target_display(discovery_id, name) for discovery_id, name in self.discovery_targets
             ))
             return
-        if kind == "힌트 획득":
+        if kind in HINT_TARGET_COMMAND_KINDS:
             aux_label(0, "힌트:")
             aux_combo(1, self.body_hint_var, tuple(
                 self._body_target_display(hint_id, name)
@@ -3381,7 +4200,7 @@ class DisevEditor:
             aux_label(0, "처리:")
             aux_combo(1, self.body_result_var, tuple(name for _code, name in EVENT_RESULT_CODES))
             return
-        if kind == "국가 멸망 처리":
+        if kind in NATION_STATE_COMMAND_KINDS:
             aux_label(0, "국가/세력:")
             aux_combo(1, self.body_nation_var, tuple(
                 self._body_target_display(nation_id, name)
@@ -3643,7 +4462,7 @@ class DisevEditor:
             raise ValueError(f"WAVES.CDS 파트 {part_index}가 RIFF WAVE 형식이 아닙니다.")
         if self._audio_preview_directory is None:
             self._audio_preview_directory = tempfile.TemporaryDirectory(
-                prefix="DISEV_Editor_audio_",
+                prefix="Event_Editor_audio_",
             )
         source = Path(self._audio_preview_directory.name) / f"WAVES_{part_index:02d}.wav"
         source.write_bytes(wav_data)
@@ -4937,7 +5756,7 @@ class DisevEditor:
         is_discovery_registration = kind == "발견물 등록/발견 처리"
         is_discovery_branch = kind == DISCOVERY_BRANCH_KIND
         is_hint_branch = kind == HINT_BRANCH_KIND
-        is_hint_grant = kind == "힌트 획득"
+        is_hint_grant = kind in HINT_TARGET_COMMAND_KINDS
         is_event_result = kind == "이벤트 결과 코드"
 
         # 상태값 명령은 1행에서 증감/설정을 고르고, 2행에서 대상·수치·랜덤 범위를 지정한다.
@@ -5040,7 +5859,8 @@ class DisevEditor:
             self.body_value_entry.grid(row=1, column=1, columnspan=5, sticky="ew", padx=(5, 0))
 
     def _builder_body_kind(self) -> str:
-        return BODY_PATH_TO_KIND.get((
+        _groups, _details, paths, _reverse = self._active_body_maps()
+        return paths.get((
             self.body_command_var.get(),
             self.body_subkind_var.get(),
             self.body_detail_var.get(),
@@ -5203,6 +6023,19 @@ class DisevEditor:
         text = self.body_city_var.get().strip()
         return self._body_target_id_from_text(text, self.city_targets, "목록에 있는 도시를 선택하세요.")
 
+    def _set_body_culture(self, culture_id: int) -> None:
+        for candidate_id, name in self.culture_targets:
+            if candidate_id == culture_id:
+                self.body_culture_var.set(self._body_target_display(candidate_id, name))
+                return
+        self.body_culture_var.set(str(culture_id))
+
+    def _body_culture_id(self) -> int:
+        return self._body_target_id_from_text(
+            self.body_culture_var.get().strip(), self.culture_targets,
+            "목록에 있는 문화권을 선택하세요.",
+        )
+
     def _set_body_building(self, building_id: int) -> None:
         for candidate_id, name in self.building_targets:
             if candidate_id == building_id:
@@ -5229,6 +6062,18 @@ class DisevEditor:
             text, self.nation_targets, "목록에 있는 국가/세력을 선택하세요.",
         )
 
+    def _set_body_city_status(self, status_id: int) -> None:
+        self.body_city_status_var.set(
+            CITY_STATUS_NAMES.get(status_id, f"알 수 없는 도시 상태 ({status_id})")
+        )
+
+    def _body_city_status_id(self) -> int:
+        name = self.body_city_status_var.get().strip()
+        try:
+            return CITY_STATUS_IDS[name]
+        except KeyError as exc:
+            raise ValueError("목록에서 도시 상태를 선택하세요.") from exc
+
     def _body_input_value(self, kind: str) -> str:
         """Return the appropriate editor value for the selected body command."""
         if kind == "특수 수치 판정":
@@ -5248,9 +6093,13 @@ class DisevEditor:
             return str(self._body_trade_good_id())
         if kind == "신도시 생성":
             return str(self._body_city_id())
-        if kind == "국가 멸망 처리":
+        if kind in NATION_STATE_COMMAND_KINDS:
             return str(self._body_nation_id())
-        if kind == "도시 시설 제거":
+        if kind == CITY_NATION_SET_COMMAND_KIND:
+            return str(self._body_nation_id())
+        if kind == CITY_STATUS_SET_COMMAND_KIND:
+            return str(self._body_city_status_id())
+        if kind in CITY_FACILITY_COMMAND_KINDS:
             return str(self._body_building_id())
         if kind == "발견물 등록/발견 처리":
             return str(self._body_character_id())
@@ -5368,16 +6217,19 @@ class DisevEditor:
                 "editable": True,
                 "flag": 0x0B if kind == "예/아니오 대사" else 0x10 if kind == "다중 선택지 대사" else None,
             }
-        if kind == CITY_STRING_COMMAND_KIND:
+        if kind in RUMOR_STRING_COMMAND_KINDS:
             encoded = encoded_value if encoded_value is not None else encode_dialogue_text(value)
             if b"\0" in encoded:
                 raise ValueError("문자열에는 NUL 문자를 넣을 수 없습니다.")
             if character_id is None or not 0 <= character_id <= 0xFFFF:
-                raise ValueError("목록에서 대상 도시를 선택하세요.")
-            # 20 0A는 대사 명령이 아니라 날짜·도시 ID가 붙은 도시 소문 로그에 넣는 형식이다.
+                target_name = "도시" if kind == CITY_STRING_COMMAND_KIND else "문화권"
+                raise ValueError(f"목록에서 대상 {target_name}을 선택하세요.")
+            # 20 0A는 대사 명령이 아니라 소문 로그 등록 형식이다. 08은 도시
+            # 한 곳, 19는 같은 문화권에 속한 모든 도시를 대상으로 한다.
+            target_type = 0x08 if kind == CITY_STRING_COMMAND_KIND else 0x19
             return {
                 "kind": kind,
-                "raw": b"\x20\x0A" + encoded + b"\0\x08" + struct.pack("<H", character_id),
+                "raw": b"\x20\x0A" + encoded + b"\0" + bytes((target_type,)) + struct.pack("<H", character_id),
                 "value": value, "encoded_value": encoded, "character_id": character_id,
                 "editable": True, "flag": 0x20,
             }
@@ -5433,25 +6285,69 @@ class DisevEditor:
                 "kind": kind, "raw": raw_prefix + struct.pack("<H", character_id),
                 "value": character_id, "character_id": character_id, "editable": True,
             }
+        if kind == CITY_NATION_SET_COMMAND_KIND:
+            if character_id is None or not 0 <= character_id <= 0xFFFF:
+                raise ValueError("목록에서 도시를 선택하세요.")
+            nation_id = int(str(value).strip())
+            if not 0 <= nation_id <= 77:
+                raise ValueError("국가/세력 ID는 0~77 범위여야 합니다.")
+            return {
+                "kind": kind,
+                "raw": b"\x21\x08" + struct.pack("<H", character_id) + b"\x00" + struct.pack("<H", nation_id),
+                "value": nation_id,
+                "character_id": character_id,
+                "nation_id": nation_id,
+                "editable": True,
+            }
+        if kind == CITY_STATUS_SET_COMMAND_KIND:
+            if character_id is None or not 0 <= character_id <= 0xFFFF:
+                raise ValueError("목록에서 도시를 선택하세요.")
+            status_id = int(str(value).strip())
+            if status_id not in CITY_STATUS_NAMES:
+                raise ValueError("도시 상태는 통상부터 대조선까지 목록에서 선택하세요.")
+            return {
+                "kind": kind,
+                "raw": b"\x21\x08" + struct.pack("<H", character_id) + b"\x18" + struct.pack("<H", status_id),
+                "value": status_id,
+                "character_id": character_id,
+                "status_id": status_id,
+                "editable": True,
+            }
+        if kind in CITY_SIZE_COMMAND_KINDS:
+            if character_id is None or not 0 <= character_id <= 0xFFFF:
+                raise ValueError("목록에서 도시를 선택하세요.")
+            amount = int(str(value).strip())
+            if not 0 <= amount <= 0xFFFFFFFF:
+                raise ValueError("도시 규모 변경 단계는 0~4,294,967,295 범위여야 합니다.")
+            opcode = 0x19 if kind == CITY_SIZE_INCREASE_COMMAND_KIND else 0x1A
+            return {
+                "kind": kind,
+                "raw": bytes((opcode, 0x08)) + struct.pack("<H", character_id) + b"\x1A" + struct.pack("<I", amount),
+                "value": amount,
+                "character_id": character_id,
+                "editable": True,
+            }
         if kind in CITY_TARGET_COMMAND_KINDS:
             if character_id is None or not 0 <= character_id <= 0xFFFF:
                 raise ValueError("목록에서 도시를 선택하세요.")
             raw_prefix = {
+                CITY_DISCOVERY_COMMAND_KIND: b"\x01\x08",
                 "도시 국적 변경": b"\x26\x1C\x1A\0\x08",
                 "도시 점령지 설정": b"\x23\x08",
                 "도시 점령지 해제": b"\x25\x08",
                 "도시 제거": b"\x22\x08",
+                CITY_FACILITY_ADD_COMMAND_KIND: b"\x26\x10",
                 "도시 시설 제거": b"\x22\x10",
                 "이벤트 대상 도시 이동": b"\x3C\x08",
             }[kind]
-            if kind == "도시 시설 제거":
+            if kind in CITY_FACILITY_COMMAND_KINDS:
                 bit_index = int(str(value).strip())
                 if not 0 <= bit_index <= 15:
-                    raise ValueError("제거할 시설 번호는 0~15 범위여야 합니다.")
+                    raise ValueError("시설 번호는 0~15 범위여야 합니다.")
                 raw_prefix += struct.pack("<H", bit_index) + b"\x08"
             return {
                 "kind": kind, "raw": raw_prefix + struct.pack("<H", character_id),
-                "value": bit_index if kind == "도시 시설 제거" else character_id,
+                "value": bit_index if kind in CITY_FACILITY_COMMAND_KINDS else character_id,
                 "character_id": character_id, "editable": True,
             }
         if kind == "이벤트 내부 참조":
@@ -5564,11 +6460,12 @@ class DisevEditor:
                 "kind": kind, "raw": b"\x01\x15" + struct.pack("<H", trade_good_id),
                 "value": trade_good_id, "editable": True,
             }
-        if kind == "국가 멸망 처리":
+        if kind in NATION_STATE_COMMAND_KINDS:
             nation_id = int(str(value).strip())
             if not 0 <= nation_id <= 77:
                 raise ValueError("국가/세력 ID는 0~77 범위여야 합니다.")
-            return {"kind": kind, "raw": b"\x22\x00" + struct.pack("<H", nation_id), "value": nation_id, "editable": True}
+            opcode = b"\x26\x00" if kind == NATION_CREATION_COMMAND_KIND else b"\x22\x00"
+            return {"kind": kind, "raw": opcode + struct.pack("<H", nation_id), "value": nation_id, "editable": True}
         if kind == "특수 상태 처리":
             numeric_value = int(str(value).strip())
             if not 0 <= numeric_value <= 0xFFFFFFFF:
@@ -5611,10 +6508,11 @@ class DisevEditor:
                 raise ValueError("연도 상한 또는 이동할 행이 올바르지 않습니다.")
             prefix = b"\x43\x39\x16" + struct.pack("<H", year)
             return {"kind": kind, "raw": prefix + b"\0\0", "value": target_index, "year": year, "branch_prefix": prefix, "target_index": target_index, "editable": True}
-        if kind == "힌트 획득":
+        if kind in HINT_TARGET_COMMAND_KINDS:
             if hint_id is None or not 0 <= hint_id <= 65535:
                 raise ValueError("목록에서 힌트를 선택하세요.")
-            return {"kind": kind, "raw": b"\x05\x0E" + struct.pack("<H", hint_id), "value": hint_id, "editable": True}
+            opcode = b"\x05\x0E" if kind == "힌트 획득" else b"\x26\x0E"
+            return {"kind": kind, "raw": opcode + struct.pack("<H", hint_id), "value": hint_id, "editable": True}
         if kind == HINT_BRANCH_KIND:
             target_index = int(str(value).strip())
             if hint_id is None or not 0 <= hint_id <= 65535:
@@ -5968,12 +6866,12 @@ class DisevEditor:
             messagebox.showerror(ui("body_add_failed"), ui("select_command_to_add"), parent=self.root)
             return
         try:
-            character_id = self._body_npc_id(self.sponsor_targets if self.body_detail_var.get().startswith("후원자") else self.character_targets) if kind == NPC_BRANCH_KIND else self._body_npc_id() if kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_city_id() if kind == CITY_STRING_COMMAND_KIND or kind in CITY_TARGET_COMMAND_KINDS + (CITY_BRANCH_KIND, RUNTIME_REFERENCE_BRANCH_KIND) else self._body_character_id() if kind in DISCOVERY_NAME_COMMAND_KINDS + (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
+            character_id = self._body_npc_id(self.sponsor_targets if self.body_detail_var.get().startswith("후원자") else self.character_targets) if kind == NPC_BRANCH_KIND else self._body_npc_id() if kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_culture_id() if kind == CULTURE_STRING_COMMAND_KIND else self._body_city_id() if kind in (CITY_STRING_COMMAND_KIND, CITY_NATION_SET_COMMAND_KIND, CITY_STATUS_SET_COMMAND_KIND, *CITY_SIZE_COMMAND_KINDS) or kind in CITY_TARGET_COMMAND_KINDS + (CITY_BRANCH_KIND, RUNTIME_REFERENCE_BRANCH_KIND) else self._body_character_id() if kind in DISCOVERY_NAME_COMMAND_KINDS + (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
             speaker_prefix = self._body_speaker_prefix() if kind in DIALOGUE_KINDS else b""
             stat_id = self._body_stat_id() if kind in STAT_COMMAND_KINDS + STAT_REFERENCE_COMMAND_KINDS + NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND,) else None
             token = self._new_body_token(
                 kind, self._body_input_value(kind), character_id, stat_id,
-                hint_id=self._body_hint_id() if kind in (HINT_BRANCH_KIND, "힌트 획득") else None,
+                hint_id=self._body_hint_id() if kind in (HINT_BRANCH_KIND, *HINT_TARGET_COMMAND_KINDS) else None,
                 item_id=self._body_item_id() if kind in (ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND) else None,
                 hint_active=self.body_hint_state_var.get() == "활성", speaker_prefix=speaker_prefix,
                 compare_value=self.special_difficulty_var.get().strip() if kind == "특수 수치 판정" else self._body_source_stat_id() if kind in STAT_REFERENCE_COMMAND_KINDS else f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_RANGE_BRANCH_KIND,) else self.body_value2_var.get().strip() if kind in (YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND) else self._body_nation_id() if kind == RUNTIME_REFERENCE_BRANCH_KIND else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND, "소지금 비교 분기") else None,
@@ -6007,12 +6905,12 @@ class DisevEditor:
             messagebox.showerror(ui("body_insert_failed"), ui("select_command_to_insert"), parent=self.root)
             return
         try:
-            character_id = self._body_npc_id(self.sponsor_targets if self.body_detail_var.get().startswith("후원자") else self.character_targets) if kind == NPC_BRANCH_KIND else self._body_npc_id() if kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_city_id() if kind == CITY_STRING_COMMAND_KIND or kind in CITY_TARGET_COMMAND_KINDS + (CITY_BRANCH_KIND, RUNTIME_REFERENCE_BRANCH_KIND) else self._body_character_id() if kind in DISCOVERY_NAME_COMMAND_KINDS + (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
+            character_id = self._body_npc_id(self.sponsor_targets if self.body_detail_var.get().startswith("후원자") else self.character_targets) if kind == NPC_BRANCH_KIND else self._body_npc_id() if kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_culture_id() if kind == CULTURE_STRING_COMMAND_KIND else self._body_city_id() if kind in (CITY_STRING_COMMAND_KIND, CITY_NATION_SET_COMMAND_KIND, CITY_STATUS_SET_COMMAND_KIND, *CITY_SIZE_COMMAND_KINDS) or kind in CITY_TARGET_COMMAND_KINDS + (CITY_BRANCH_KIND, RUNTIME_REFERENCE_BRANCH_KIND) else self._body_character_id() if kind in DISCOVERY_NAME_COMMAND_KINDS + (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
             speaker_prefix = self._body_speaker_prefix() if kind in DIALOGUE_KINDS else b""
             stat_id = self._body_stat_id() if kind in STAT_COMMAND_KINDS + STAT_REFERENCE_COMMAND_KINDS + NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND,) else None
             token = self._new_body_token(
                 kind, self._body_input_value(kind), character_id, stat_id,
-                hint_id=self._body_hint_id() if kind in (HINT_BRANCH_KIND, "힌트 획득") else None,
+                hint_id=self._body_hint_id() if kind in (HINT_BRANCH_KIND, *HINT_TARGET_COMMAND_KINDS) else None,
                 item_id=self._body_item_id() if kind in (ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND) else None,
                 hint_active=self.body_hint_state_var.get() == "활성", speaker_prefix=speaker_prefix,
                 compare_value=self.special_difficulty_var.get().strip() if kind == "특수 수치 판정" else self._body_source_stat_id() if kind in STAT_REFERENCE_COMMAND_KINDS else f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_RANGE_BRANCH_KIND,) else self.body_value2_var.get().strip() if kind in (YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND) else self._body_nation_id() if kind == RUNTIME_REFERENCE_BRANCH_KIND else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND, "소지금 비교 분기") else None,
@@ -6063,10 +6961,16 @@ class DisevEditor:
         for widget in self.condition_value_spins:
             widget.configure(state="normal" if editable else "disabled")
         self.condition_target_combo.configure(state="readonly" if editable else "disabled")
+        self.condition_secondary_target_combo.configure(state="readonly" if editable else "disabled")
         if editable:
             self._condition_kind_changed()
         else:
-            self.condition_summary_var.set("미확인 opcode가 포함돼 조건 편집을 잠갔습니다. 원본 조건은 그대로 보존됩니다.")
+            if self.event_file_type == EVENT_FILE_HISTORY:
+                self.condition_summary_var.set(
+                    "아직 분석되지 않은 역사 이벤트 복합 조건이 포함돼 편집을 잠갔습니다. 원본 조건은 그대로 보존됩니다."
+                )
+            else:
+                self.condition_summary_var.set("미확인 opcode가 포함돼 조건 편집을 잠갔습니다. 원본 조건은 그대로 보존됩니다.")
         self._refresh_condition_display()
 
     def _token_from_builder(self) -> tuple[str, tuple[int, ...]] | None:
@@ -6076,11 +6980,30 @@ class DisevEditor:
             return None
         if kind == "또는 (OR)":
             return kind, ()
+        if kind == "특정 연·월":
+            year = int(self.condition_value_vars[0].get().strip())
+            year_title, year_minimum, year_maximum = fields[1]
+            if not year_minimum <= year <= year_maximum:
+                raise ValueError(f"{year_title} 값은 {year_minimum}~{year_maximum} 범위여야 합니다.")
+            return kind, (1, year)
         if self._condition_named_targets(kind):
             selected = self.condition_target_var.get().split("|", 1)[0].strip()
             if not selected:
                 raise ValueError("목록에서 조건 대상을 선택하세요.")
-            return kind, (int(selected),)
+            values = [int(selected)]
+            secondary_targets = self._condition_secondary_named_targets(kind)
+            if secondary_targets:
+                secondary = self.condition_secondary_target_var.get().split("|", 1)[0].strip()
+                if not secondary:
+                    raise ValueError("목록에서 도시를 선택하세요.")
+                values.append(int(secondary))
+            for index, field in enumerate(fields[len(values):]):
+                title, minimum, maximum = field
+                value = int(self.condition_value_vars[index].get().strip())
+                if not minimum <= value <= maximum:
+                    raise ValueError(f"{title} 값은 {minimum}~{maximum} 범위여야 합니다.")
+                values.append(value)
+            return kind, tuple(values)
         values = tuple(int(self.condition_value_vars[index].get().strip()) for index in range(len(fields)))
         for value, (_name, minimum, maximum) in zip(values, fields):
             if not minimum <= value <= maximum:
@@ -6213,10 +7136,104 @@ class DisevEditor:
         filename = filedialog.askopenfilename(
             parent=self.root,
             title=ui("open_disev_dialog_title"),
-            filetypes=((ui("disev_event_file"), "DISEV.CDS"), (ui("cds_file"), "*.CDS"), (ui("all_files"), "*.*")),
+            filetypes=(
+                (ui("disev_event_file"), ("DISEV.CDS", "HIST_EV.CDS")),
+                (ui("cds_file"), "*.CDS"),
+                (ui("all_files"), "*.*"),
+            ),
         )
         if filename:
             self._load_archive(Path(filename))
+
+    @classmethod
+    def _detect_event_file_type(cls, parts: list[bytes]) -> str | None:
+        """파일명·파트 수가 아닌 양쪽 파일의 고유 명령으로 종류를 판정한다."""
+        discovery_command_found = False
+        history_command_found = False
+        for part_index, part in enumerate(parts):
+            _step, slots = disev.validate_part(part, part_index)
+            starts = sorted({start for pair in slots for start in pair})
+            for condition_start, body_start in slots:
+                condition_end = disev.chunk_end(part, starts, condition_start)
+                condition = part[condition_start:condition_end]
+                # HIST_EV의 특정 연·월 일치 조건:
+                # 1C 17 [월] 16 [연도 u16] ... FF
+                if (
+                    len(condition) >= 7
+                    and condition[:2] == b"\x1C\x17"
+                    and 1 <= condition[2] <= 12
+                    and condition[3] == 0x16
+                ):
+                    history_command_found = True
+
+                body_end = disev.chunk_end(part, starts, body_start)
+                for token in cls._decode_body_tokens(
+                    part[body_start:body_end], body_part_offset=body_start,
+                ):
+                    if token.get("kind") == "발견물 등록/발견 처리":
+                        discovery_command_found = True
+                        break
+
+                # 고유 명령이 양쪽 모두 나오면 수정·혼합 파일일 수 있으므로
+                # 자동 판정을 중지하고 사용자가 직접 고르게 한다.
+                if discovery_command_found and history_command_found:
+                    return None
+
+        if discovery_command_found:
+            return EVENT_FILE_DISCOVERY
+        if history_command_found:
+            return EVENT_FILE_HISTORY
+        return None
+
+    def _choose_event_file_type(self, path: Path) -> str | None:
+        """고유 명령으로 판정할 수 없는 파일의 종류를 중앙 팝업에서 받는다."""
+        result: dict[str, str | None] = {"value": None}
+        dialog = tk.Toplevel(self.root)
+        dialog.withdraw()
+        dialog.title("이벤트 파일 종류 선택")
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+
+        content = ttk.Frame(dialog, padding=(22, 18, 22, 16))
+        content.pack(fill="both", expand=True)
+        ttk.Label(
+            content,
+            text=(
+                f"{path.name}\n\n"
+                "고유 명령만으로 파일 종류를 판정할 수 없습니다.\n"
+                "열려는 이벤트 파일의 종류를 선택하세요."
+            ),
+            justify="center",
+        ).pack(pady=(0, 16))
+
+        button_row = ttk.Frame(content)
+        button_row.pack()
+
+        def finish(value: str | None) -> None:
+            result["value"] = value
+            dialog.destroy()
+
+        ttk.Button(
+            button_row, text="발견물 이벤트", width=15,
+            command=lambda: finish(EVENT_FILE_DISCOVERY),
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            button_row, text="역사 이벤트", width=15,
+            command=lambda: finish(EVENT_FILE_HISTORY),
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            button_row, text="취소", width=9,
+            command=lambda: finish(None),
+        ).pack(side="left")
+
+        dialog.protocol("WM_DELETE_WINDOW", lambda: finish(None))
+        dialog.bind("<Escape>", lambda _event: finish(None))
+        self._center_popup(dialog)
+        dialog.deiconify()
+        dialog.lift()
+        dialog.grab_set()
+        dialog.wait_window()
+        return result["value"]
 
     def _load_archive(self, path: Path) -> None:
         try:
@@ -6230,12 +7247,23 @@ class DisevEditor:
             messagebox.showerror(ui("open_failed"), str(exc), parent=self.root)
             return
 
+        event_file_type = self._detect_event_file_type(parts)
+        if event_file_type is None:
+            event_file_type = self._choose_event_file_type(path)
+            if event_file_type is None:
+                return
+
         self.disev_path = path.resolve()
+        self.event_file_type = event_file_type
+        self._configure_event_editor_schema()
+        self._refresh_command_guide()
         self.archive = archive
         self.entries = entries
         self.parts = parts
         self.original_parts = list(parts)
+        self.part_source_indices = list(range(len(parts)))
         self.modified.clear()
+        self.structure_modified = False
         self.current_index = None
         self.current_discovery_id = None
         self.pending = False
@@ -6243,12 +7271,13 @@ class DisevEditor:
         self.discovery_part_map = {}
         self._script_media_name_cache.clear()
 
-        candidate = self.disev_path.with_name("CDS_95.EXE")
-        if candidate.exists():
-            self._load_exe_mapping(candidate, quiet=True)
+        if self.event_file_type == EVENT_FILE_DISCOVERY:
+            candidate = self.disev_path.with_name("CDS_95.EXE")
+            if candidate.exists():
+                self._load_exe_mapping(candidate, quiet=True)
         if not self.rows:
-            # EXE가 다른 폴더에 있거나 레코드 탐색에 실패해도 DISEV 자체는
-            # 편집할 수 있다. 이름만 알 수 없는 상태로 파트 목록을 유지한다.
+            # 이름표를 읽지 못하거나 역사 이벤트 파일인 경우에도 내부 파트는
+            # 모두 편집할 수 있도록 기본 이름으로 목록을 유지한다.
             self.rows = self._fallback_discovery_rows(len(self.parts))
             self.discovery_part_map = {index: index for index in range(len(self.parts))}
         self._refresh_tree()
@@ -6279,6 +7308,128 @@ class DisevEditor:
             )
             for index in range(part_count)
         ]
+
+    def _part_names_by_index(self) -> list[str]:
+        """현재 목록 이름을 실제 파트 번호 순서로 정렬한다."""
+        names = [f"파트 {index:03d}" for index in range(len(self.parts))]
+        for row in self.rows:
+            part_index = self.discovery_part_map.get(row.index)
+            if part_index is not None and 0 <= part_index < len(names):
+                names[part_index] = row.name
+        return names
+
+    def _replace_part_rows(self, names: list[str]) -> None:
+        """파트 증감 뒤 목록 ID를 현재 파트 인덱스에 맞춰 다시 매긴다."""
+        self.rows = [
+            disev.DiscoveryRow(
+                index=index,
+                file_offset=0,
+                name=name,
+                category=0,
+                game_id=index,
+                still=0,
+                avi=0,
+                cg=0,
+            )
+            for index, name in enumerate(names)
+        ]
+        self.discovery_part_map = {index: index for index in range(len(names))}
+
+    def _refresh_structure_modified(self) -> None:
+        """추가 후 즉시 제거한 경우처럼 원래 구조로 돌아온 상태도 구분한다."""
+        self.structure_modified = self.part_source_indices != list(range(len(self.entries)))
+
+    @staticmethod
+    def _empty_part(step: int) -> bytes:
+        """1슬롯·빈 조건·빈 본문으로 이루어진 최소 파트를 만든다."""
+        return struct.pack("<HHHH", step, 1, 4, 5) + b"\xFF\xFF"
+
+    def _select_part_index(self, index: int) -> None:
+        iid = f"d{index}"
+        if not self.tree.exists(iid):
+            return
+        self.current_index = None
+        self.current_discovery_id = None
+        self.tree.selection_set(iid)
+        self.tree.focus(iid)
+        self.tree.see(iid)
+        self._select_part()
+
+    def _add_part(self) -> None:
+        if not self.parts:
+            return
+        if self.pending and not self._apply_editor():
+            return
+        names = self._part_names_by_index()
+        try:
+            steps = [disev.validate_part(part, index)[0] for index, part in enumerate(self.parts)]
+            step = max(steps, default=-1) + 1
+            if step > 0xFFFF:
+                raise ValueError("새 파트의 내부 단계 번호가 16비트 범위를 벗어납니다.")
+            new_part = self._empty_part(step)
+            disev.validate_part(new_part, len(self.parts))
+        except (ValueError, struct.error) as exc:
+            messagebox.showerror("파트 추가 실패", str(exc), parent=self.root)
+            return
+
+        new_index = len(self.parts)
+        self.parts.append(new_part)
+        self.original_parts.append(new_part)
+        self.part_source_indices.append(None)
+        self.modified.add(new_index)
+        self._refresh_structure_modified()
+        names.append("새 파트")
+        self._replace_part_rows(names)
+        self._script_media_name_cache.clear()
+        self.search_edit.set_text("")
+        self.pending = False
+        self._refresh_tree(keep_index=new_index)
+        self._set_edit_state(True)
+        self._select_part_index(new_index)
+        self._update_dirty_status()
+        self.status_var.set(f"파트 {new_index:03d}을 추가했습니다.")
+
+    def _remove_part(self) -> None:
+        if len(self.parts) <= 1 or self.current_index is None:
+            return
+        if self.pending and not self._apply_editor():
+            return
+        index = self.current_index
+        names = self._part_names_by_index()
+        name = names[index] if 0 <= index < len(names) else f"파트 {index:03d}"
+        if not messagebox.askyesno(
+            "파트 제거 경고",
+            (
+                f"파트 {index:03d} ({name})을 제거하시겠습니까?\n\n"
+                "제거한 파트 뒤의 ID는 한 칸씩 당겨집니다."
+            ),
+            icon=messagebox.WARNING,
+            parent=self.root,
+        ):
+            return
+
+        del self.parts[index]
+        del self.original_parts[index]
+        del self.part_source_indices[index]
+        del names[index]
+        self.modified = {
+            modified_index if modified_index < index else modified_index - 1
+            for modified_index in self.modified
+            if modified_index != index
+        }
+        self._refresh_structure_modified()
+        self.pending = False
+        self.current_index = None
+        self.current_discovery_id = None
+        self._replace_part_rows(names)
+        self._script_media_name_cache.clear()
+        self.search_edit.set_text("")
+        target = min(index, len(self.parts) - 1)
+        self._refresh_tree(keep_index=target)
+        self._set_edit_state(True)
+        self._select_part_index(target)
+        self._update_dirty_status()
+        self.status_var.set(f"파트 {index:03d}을 제거했습니다.")
 
     def _load_exe_mapping(self, path: Path, quiet: bool) -> None:
         try:
@@ -6405,29 +7556,188 @@ class DisevEditor:
                 return
         self._load_part(index, row)
 
+    def _rebuild_slot_tabs(self, selected_index: int | None = None) -> None:
+        """현재 슬롯 초안 수에 맞춰 슬롯 탭과 마지막 '+' 탭을 다시 만든다."""
+        self._slot_tab_rebuilding = True
+        try:
+            for tab_id in self.slot_notebook.tabs():
+                self.slot_notebook.forget(tab_id)
+            self._slot_tab_frames.clear()
+            self.slot_notebook.configure(
+                style="Slot.TNotebook" if len(self.slot_drafts) >= 2 else "SlotNoClose.TNotebook",
+            )
+            visible_slot_count = max(1, len(self.slot_drafts))
+            for slot_index in range(visible_slot_count):
+                frame = ttk.Frame(self.slot_notebook)
+                self._slot_tab_frames.append(frame)
+                self.slot_notebook.add(frame, text=f"슬롯 {slot_index + 1}")
+            add_frame = ttk.Frame(self.slot_notebook)
+            self._slot_tab_frames.append(add_frame)
+            # 다중 슬롯 스타일에서도 '+' 옆에 닫기 아이콘이 생기지 않도록
+            # disabled 상태용 투명 이미지를 사용한다. 클릭은 아래 바인딩이 받는다.
+            self.slot_notebook.add(add_frame, text="+", state="disabled")
+            if self.slot_drafts:
+                target = 0 if selected_index is None else max(0, min(selected_index, len(self.slot_drafts) - 1))
+                self.slot_notebook.select(target)
+        finally:
+            self._slot_tab_rebuilding = False
+
+    def _slot_tab_at(self, event: tk.Event) -> int | None:
+        try:
+            return int(self.slot_notebook.index(f"@{event.x},{event.y}"))
+        except (tk.TclError, ValueError):
+            return None
+
+    def _slot_tab_pressed(self, event: tk.Event) -> str | None:
+        tab_index = self._slot_tab_at(event)
+        if tab_index is None:
+            return None
+        if tab_index == len(self.slot_drafts):
+            self._add_slot()
+            return "break"
+        element = self.slot_notebook.identify(event.x, event.y)
+        if "close" in element.lower():
+            self._remove_slot(tab_index)
+            return "break"
+        if tab_index != self.current_slot_index and not self._capture_current_slot_draft():
+            return "break"
+        return None
+
+    def _slot_tab_changed(self, _event: tk.Event | None = None) -> None:
+        if self._slot_tab_rebuilding or not self.slot_drafts:
+            return
+        selected = self.slot_notebook.select()
+        if not selected:
+            return
+        try:
+            new_index = int(self.slot_notebook.index(selected))
+        except (tk.TclError, ValueError):
+            return
+        if not 0 <= new_index < len(self.slot_drafts) or new_index == self.current_slot_index:
+            return
+        old_index = self.current_slot_index
+        if old_index is not None and not self._capture_current_slot_draft():
+            self._slot_tab_rebuilding = True
+            try:
+                self.slot_notebook.select(old_index)
+            finally:
+                self._slot_tab_rebuilding = False
+            return
+        self._load_slot_editor(new_index)
+
+    def _capture_current_slot_draft(self, *, show_error: bool = True) -> bool:
+        """화면의 조건·명령을 현재 슬롯 초안에 직렬화한다."""
+        slot_index = self.current_slot_index
+        if slot_index is None or not 0 <= slot_index < len(self.slot_drafts):
+            return True
+        draft = self.slot_drafts[slot_index]
+        try:
+            # 해석하지 못한 조건은 편집 컨트롤도 잠기므로 원본 청크를 유지한다.
+            condition = (bytes(draft["condition"]) if self.condition_tokens is None
+                         else self._encode_condition_tokens())
+            body = self._encode_body_tokens()
+        except (ValueError, struct.error) as exc:
+            if show_error:
+                messagebox.showerror("슬롯 전환 실패", str(exc), parent=self.root)
+            return False
+        draft["condition"] = condition
+        draft["body"] = body
+        draft["body_start"] = int(getattr(self, "body_part_offset", draft["body_start"]))
+        return True
+
+    def _load_slot_editor(self, slot_index: int, row: disev.DiscoveryRow | None = None) -> None:
+        if not 0 <= slot_index < len(self.slot_drafts):
+            return
+        draft = self.slot_drafts[slot_index]
+        was_loading = self.loading_editor
+        self.loading_editor = True
+        try:
+            self.current_slot_index = slot_index
+            self._load_condition_builder(bytes(draft["condition"]))
+            self._show_body_commands(
+                bytes(draft["body"]), int(draft["body_start"]),
+                row or self._row_for_discovery(self.current_discovery_id),
+            )
+        finally:
+            self.loading_editor = was_loading
+
+    def _add_slot(self) -> None:
+        if not self.slot_drafts or self.current_slot_index is None:
+            return
+        if len(self.slot_drafts) >= 16:
+            messagebox.showwarning("슬롯 추가", "슬롯은 최대 16개까지 추가할 수 있습니다.", parent=self.root)
+            return
+        if not self._capture_current_slot_draft():
+            return
+        source = self.slot_drafts[self.current_slot_index]
+        self.slot_drafts.append({
+            # 조건열과 본문은 각각 FF 하나가 빈 상태이자 정상 종료 형식이다.
+            "condition": b"\xFF",
+            "body": b"\xFF",
+            "condition_start": int(source["condition_start"]),
+            "body_start": int(source["body_start"]),
+        })
+        new_index = len(self.slot_drafts) - 1
+        self.pending = True
+        self._rebuild_slot_tabs(new_index)
+        self._load_slot_editor(new_index)
+        self.status_var.set(f"슬롯 {new_index + 1}을 추가했습니다.")
+
+    def _remove_slot(self, slot_index: int) -> None:
+        if len(self.slot_drafts) <= 1 or not 0 <= slot_index < len(self.slot_drafts):
+            return
+        if not messagebox.askyesno(
+            "슬롯 삭제",
+            f"슬롯 {slot_index + 1}을 삭제하시겠습니까?",
+            parent=self.root,
+        ):
+            return
+        if not self._capture_current_slot_draft():
+            return
+        old_current = self.current_slot_index
+        del self.slot_drafts[slot_index]
+        if old_current is None or old_current == slot_index:
+            target = min(slot_index, len(self.slot_drafts) - 1)
+        elif old_current > slot_index:
+            target = old_current - 1
+        else:
+            target = old_current
+        self.current_slot_index = None
+        self.pending = True
+        self._rebuild_slot_tabs(target)
+        self._load_slot_editor(target)
+        self.status_var.set(f"슬롯 {slot_index + 1}을 삭제했습니다.")
+
     def _load_part(self, index: int, row: disev.DiscoveryRow | None = None) -> None:
         part = self.parts[index]
-        step, slots = disev.validate_part(part, index)
-        if len(slots) != 1:
-            messagebox.showerror(ui("unsupported_structure"), ui("one_slot_only"), parent=self.root)
-            return
-        condition_start, body_start = slots[0]
+        _step, slots = disev.validate_part(part, index)
+        starts = sorted({start for pair in slots for start in pair})
         self.current_index = index
         if row is not None:
             self.current_discovery_id = row.index
         self.loading_editor = True
         self._set_edit_state(True)
         row = row or self._row_for_discovery(self.current_discovery_id)
-        stored_condition = part[condition_start:body_start]
-        self._load_condition_builder(stored_condition)
-        self._show_body_commands(part, body_start, row)
+        self.slot_drafts = []
+        for condition_start, body_start in slots:
+            condition_end = disev.chunk_end(part, starts, condition_start)
+            body_end = disev.chunk_end(part, starts, body_start)
+            self.slot_drafts.append({
+                "condition": part[condition_start:condition_end],
+                "body": part[body_start:body_end],
+                "condition_start": condition_start,
+                "body_start": body_start,
+            })
+        self.current_slot_index = None
+        self._rebuild_slot_tabs(0)
+        self._load_slot_editor(0, row)
         self.pending = False
         self.loading_editor = False
         self.status_var.set(ui("status_part_selected", index, row.name if row else ui("unmapped")))
 
-    def _show_body_commands(self, part: bytes, body_start: int, row: disev.DiscoveryRow | None) -> None:
+    def _show_body_commands(self, body: bytes, body_start: int, row: disev.DiscoveryRow | None) -> None:
         self.body_part_offset = body_start
-        self.body_tokens = self._decode_body_tokens(part[body_start:], body_part_offset=body_start)
+        self.body_tokens = self._decode_body_tokens(body, body_part_offset=body_start)
         self.selected_body_index = None
         self.body_tree.delete(*self.body_tree.get_children())
         for index, token in enumerate(self.body_tokens):
@@ -6556,6 +7866,79 @@ class DisevEditor:
                 })
                 i += 7
                 continue
+            # 01 08 [도시 u16]: 특수 개방 대상 도시의 비활성 플래그를 해제하고
+            # 실행 문맥에 따라 도시 발견 알림을 표시한다.
+            if i + 4 <= len(body) and body[i : i + 2] == b"\x01\x08":
+                city_id = struct.unpack_from("<H", body, i + 2)[0]
+                tokens.append({
+                    "kind": CITY_DISCOVERY_COMMAND_KIND,
+                    "raw": body[i : i + 4],
+                    "value": city_id,
+                    "character_id": city_id,
+                    "editable": True,
+                })
+                i += 4
+                continue
+            # 19/1A 08 [도시 u16] 1A [u32]: 도시 규모 단계를 증가/감소시킨다.
+            # EXE는 실행 결과를 0~7로 제한한다.
+            if (
+                i + 9 <= len(body)
+                and body[i] in (0x19, 0x1A)
+                and body[i + 1] == 0x08
+                and body[i + 4] == 0x1A
+            ):
+                city_id = struct.unpack_from("<H", body, i + 2)[0]
+                amount = struct.unpack_from("<I", body, i + 5)[0]
+                tokens.append({
+                    "kind": CITY_SIZE_INCREASE_COMMAND_KIND if body[i] == 0x19 else CITY_SIZE_DECREASE_COMMAND_KIND,
+                    "raw": body[i : i + 9],
+                    "value": amount,
+                    "character_id": city_id,
+                    "editable": True,
+                })
+                i += 9
+                continue
+            # 21 08 [도시 u16] [피연산자 종류] [값 u16]: 도시 런타임
+            # 레코드의 필드를 설정한다. 종류 00은 소속 국가를 직접 지정하며,
+            # 대상이 기존 국가의 수도이면 그 국가 소속 도시 전체를 이전한다.
+            # 18은 통상·전염병·전쟁·대조선 등의 도시 상태, 19는 문화권이다.
+            # 원본 HIST_EV에 사용된 상태값은 상태명 표의 0~13 범위만 편집한다.
+            if i + 7 <= len(body) and body[i : i + 2] == b"\x21\x08":
+                city_id = struct.unpack_from("<H", body, i + 2)[0]
+                operand_type = body[i + 4]
+                operand_value = struct.unpack_from("<H", body, i + 5)[0]
+                if operand_type == 0x00:
+                    tokens.append({
+                        "kind": CITY_NATION_SET_COMMAND_KIND,
+                        "raw": body[i : i + 7],
+                        "value": operand_value,
+                        "character_id": city_id,
+                        "nation_id": operand_value,
+                        "editable": True,
+                    })
+                elif operand_type == 0x18:
+                    tokens.append({
+                        "kind": CITY_STATUS_SET_COMMAND_KIND,
+                        "raw": body[i : i + 7],
+                        "value": operand_value,
+                        "character_id": city_id,
+                        "status_id": operand_value,
+                        "editable": operand_value in CITY_STATUS_NAMES,
+                    })
+                else:
+                    field_name = {
+                        0x19: "도시 문화권 설정 (원본 미사용)",
+                    }.get(operand_type, f"도시 필드 종류 0x{operand_type:02X} 설정 (미확인)")
+                    tokens.append({
+                        "kind": field_name,
+                        "raw": body[i : i + 7],
+                        "value": operand_value,
+                        "character_id": city_id,
+                        "operand_type": operand_type,
+                        "editable": False,
+                    })
+                i += 7
+                continue
             if i + 4 <= len(body) and body[i : i + 2] == b"\x26\x08":
                 city_id = struct.unpack_from("<H", body, i + 2)[0]
                 tokens.append({
@@ -6565,6 +7948,33 @@ class DisevEditor:
                     "editable": True,
                 })
                 i += 4
+                continue
+            # 26 00 [국가/세력 ID u16]: 국가 런타임 레코드 +0x04를
+            # 1로 설정해 역사 이벤트에서 새 국가를 생성·등장시킨다.
+            # 22 00의 상태 2(멸망)와 짝을 이루는 국가 상태 명령이다.
+            if i + 4 <= len(body) and body[i : i + 2] == b"\x26\x00":
+                nation_id = struct.unpack_from("<H", body, i + 2)[0]
+                tokens.append({
+                    "kind": NATION_CREATION_COMMAND_KIND,
+                    "raw": body[i : i + 4],
+                    "value": nation_id,
+                    "editable": 0 <= nation_id <= 77,
+                })
+                i += 4
+                continue
+            # 26 10 [시설 비트 번호 u16] 08 [도시 u16]: 지정 도시의
+            # 시설 마스크에 해당 비트를 OR해 시설을 추가한다.
+            if i + 7 <= len(body) and body[i : i + 2] == b"\x26\x10" and body[i + 4] == 0x08:
+                bit_index = struct.unpack_from("<H", body, i + 2)[0]
+                city_id = struct.unpack_from("<H", body, i + 5)[0]
+                tokens.append({
+                    "kind": CITY_FACILITY_ADD_COMMAND_KIND,
+                    "raw": body[i : i + 7],
+                    "value": bit_index,
+                    "character_id": city_id,
+                    "editable": bit_index <= 15,
+                })
+                i += 7
                 continue
             # 26 0F [세트]: 다음 0C 0D 일기토가 읽을 FIGHTER.CDS 그래픽·팔레트 세트를 설정한다.
             if i + 4 <= len(body) and body[i : i + 2] == b"\x26\x0F":
@@ -6752,18 +8162,21 @@ class DisevEditor:
                     })
                     i = end + 2
                     continue
-            # 20 0A [문자열] 00 08 [도시 u16]: 날짜가 붙은 도시 소문·기록을 등록한다.
+            # 20 0A [문자열] 00 08 [도시 u16] / 19 [문화권 u16]:
+            # 날짜가 붙은 소문·기록을 지정 도시 또는 문화권의 모든 도시에 등록한다.
             if i + 7 <= len(body) and body[i : i + 2] == b"\x20\x0A":
                 text_start = i + 2
                 end = body.find(b"\0", text_start)
-                if end >= 0 and end + 4 <= len(body) and body[end + 1] == 0x08:
+                if end >= 0 and end + 4 <= len(body) and body[end + 1] in (0x08, 0x19):
                     source = body[text_start:end]
                     _speaker, text = disev.decode_dialogue(source)
-                    city_id = struct.unpack_from("<H", body, end + 2)[0]
+                    target_type = body[end + 1]
+                    target_id = struct.unpack_from("<H", body, end + 2)[0]
                     tokens.append({
-                        "kind": CITY_STRING_COMMAND_KIND, "raw": body[i : end + 4], "value": text,
+                        "kind": CITY_STRING_COMMAND_KIND if target_type == 0x08 else CULTURE_STRING_COMMAND_KIND,
+                        "raw": body[i : end + 4], "value": text,
                         "encoded_value": source,
-                        "character_id": city_id,
+                        "character_id": target_id,
                         "editable": True, "flag": 0x20,
                     })
                     i = end + 4
@@ -6853,6 +8266,12 @@ class DisevEditor:
             # 05 0E [힌트 u16]: 발견물 힌트를 획득(활성)한다.
             if i + 4 <= len(body) and body[i:i + 2] == b"\x05\x0E":
                 tokens.append({"kind": "힌트 획득", "raw": body[i:i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
+                i += 4
+                continue
+            # 26 0E [힌트 u16]: 힌트 상태에 등장 플래그 0x08을 설정해
+            # 미획득 상태로 등록한다. 하위 활성 상태 비트는 변경하지 않는다.
+            if i + 4 <= len(body) and body[i:i + 2] == b"\x26\x0E":
+                tokens.append({"kind": HINT_REGISTER_COMMAND_KIND, "raw": body[i:i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
             # 66 03 [u16]: 현재 재생 중인 음원과 지정한 음원 ID를 정지한다.
@@ -7325,10 +8744,15 @@ class DisevEditor:
                 token["speaker_prefix"] = speaker_prefix
                 token["flag"] = flag
                 token["kind"] = kind
-            elif kind == CITY_STRING_COMMAND_KIND:
+            elif kind in RUMOR_STRING_COMMAND_KINDS:
                 text = self.body_value_var.get()
                 token.update(self._new_body_token(
-                    kind, text, character_id=self._body_city_id(),
+                    kind, text,
+                    character_id=(
+                        self._body_city_id()
+                        if kind == CITY_STRING_COMMAND_KIND
+                        else self._body_culture_id()
+                    ),
                     encoded_value=(
                         bytes(token["encoded_value"])
                         if text == token.get("value") and isinstance(token.get("encoded_value"), bytes)
@@ -7367,7 +8791,7 @@ class DisevEditor:
                 ))
             elif kind in ("아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리"):
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
-            elif kind == "힌트 획득":
+            elif kind in HINT_TARGET_COMMAND_KINDS:
                 token.update(self._new_body_token(kind, hint_id=self._body_hint_id()))
             elif kind in ("신도시 생성", "발견물 등록/발견 처리"):
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
@@ -7381,6 +8805,14 @@ class DisevEditor:
                 ))
             elif kind in CHARACTER_TARGET_COMMAND_KINDS:
                 token.update(self._new_body_token(kind, self._body_input_value(kind), character_id=self._body_npc_id()))
+            elif kind in (CITY_NATION_SET_COMMAND_KIND, CITY_STATUS_SET_COMMAND_KIND):
+                token.update(self._new_body_token(
+                    kind, self._body_input_value(kind), character_id=self._body_city_id(),
+                ))
+            elif kind in CITY_SIZE_COMMAND_KINDS:
+                token.update(self._new_body_token(
+                    kind, self._body_input_value(kind), character_id=self._body_city_id(),
+                ))
             elif kind in CITY_TARGET_COMMAND_KINDS:
                 token.update(self._new_body_token(kind, self._body_input_value(kind), character_id=self._body_city_id()))
             elif kind == "이벤트 내부 참조":
@@ -7433,7 +8865,7 @@ class DisevEditor:
                 token.update(self._new_body_token(kind, self.body_value_var.get()))
             elif kind == "날짜 경과":
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
-            elif kind == "국가 멸망 처리":
+            elif kind in NATION_STATE_COMMAND_KINDS:
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
             elif kind == "교역품 활성화":
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
@@ -7504,13 +8936,48 @@ class DisevEditor:
                 (name for candidate_id, name in self.city_targets if candidate_id == city_id),
                 f"도시 {city_id}",
             )
+        elif kind == CULTURE_STRING_COMMAND_KIND:
+            culture_id = int(token.get("character_id", -1))
+            fourth = next(
+                (name for candidate_id, name in self.culture_targets if candidate_id == culture_id),
+                f"문화권 {culture_id}",
+            )
+        elif kind == CITY_NATION_SET_COMMAND_KIND:
+            city_id = int(token.get("character_id", -1))
+            nation_id = int(token.get("nation_id", -1))
+            fourth = next(
+                (name for candidate_id, name in self.city_targets if candidate_id == city_id),
+                f"도시 {city_id}",
+            )
+            fifth = next(
+                (name for candidate_id, name in self.nation_targets if candidate_id == nation_id),
+                f"국가/세력 {nation_id}",
+            )
+        elif kind == CITY_STATUS_SET_COMMAND_KIND:
+            city_id = int(token.get("character_id", -1))
+            fourth = next(
+                (name for candidate_id, name in self.city_targets if candidate_id == city_id),
+                f"도시 {city_id}",
+            )
+        elif kind in CITY_SIZE_COMMAND_KINDS:
+            city_id = int(token.get("character_id", -1))
+            fourth = next(
+                (name for candidate_id, name in self.city_targets if candidate_id == city_id),
+                f"도시 {city_id}",
+            )
+        elif kind.startswith("도시 필드 "):
+            city_id = int(token.get("character_id", -1))
+            fourth = next(
+                (name for candidate_id, name in self.city_targets if candidate_id == city_id),
+                f"도시 {city_id}",
+            )
         elif kind in CITY_TARGET_COMMAND_KINDS:
             city_id = int(token.get("character_id", -1))
             fourth = next(
                 (name for candidate_id, name in self.city_targets if candidate_id == city_id),
                 f"도시 {city_id}",
             )
-            if kind == "도시 시설 제거":
+            if kind in CITY_FACILITY_COMMAND_KINDS:
                 facility_id = int(token.get("value", -1))
                 facility_name = next(
                     (name for candidate_id, name in self.building_targets if candidate_id == facility_id),
@@ -7607,7 +9074,7 @@ class DisevEditor:
             return str(int(value))
         if kind in CONDITIONAL_BRANCH_KINDS:
             return str(int(value))
-        if kind == "도시 시설 제거":
+        if kind in CITY_FACILITY_COMMAND_KINDS:
             city_id = int(token.get("character_id", -1))
             return next(
                 (name for candidate_id, name in self.city_targets if candidate_id == city_id),
@@ -7618,22 +9085,28 @@ class DisevEditor:
             "아이템 상실": self.item_targets,
             "이벤트 아이템 등록": self.item_targets,
             "이벤트 아이템 처리": self.item_targets,
+            CITY_DISCOVERY_COMMAND_KIND: self.city_targets,
             "신도시 생성": self.city_targets,
             "발견물 등록/발견 처리": self.discovery_targets,
             "힌트 획득": self.hint_targets,
+            HINT_REGISTER_COMMAND_KIND: self.hint_targets,
             "인물 상태 처리 1": self.character_targets,
             "인물 상태 처리 2": self.character_targets,
             "도시 국적 변경": self.city_targets,
+            CITY_NATION_SET_COMMAND_KIND: self.nation_targets,
             "도시 점령지 설정": self.city_targets,
             "도시 점령지 해제": self.city_targets,
             "도시 제거": self.city_targets,
             "이벤트 대상 도시 이동": self.city_targets,
+            NATION_CREATION_COMMAND_KIND: self.nation_targets,
             "국가 멸망 처리": self.nation_targets,
             "교역품 활성화": self.trade_good_targets,
         }
         for target_id, name in target_sets.get(kind, []):
             if target_id == value:
                 return name
+        if kind == CITY_STATUS_SET_COMMAND_KIND:
+            return CITY_STATUS_NAMES.get(int(value), f"알 수 없는 도시 상태 ({value})")
         if kind == "이벤트 결과 코드":
             return EVENT_RESULT_NAMES.get(int(value), f"알 수 없는 결과 ({value})")
         if kind in STAT_REFERENCE_COMMAND_KINDS:
@@ -7649,21 +9122,72 @@ class DisevEditor:
         widget.insert("1.0", value)
         widget.configure(state="disabled")
 
+    def _assemble_slot_part(self, step: int) -> bytes:
+        """슬롯 초안을 LS12 파트 헤더·조건·본문 순서로 다시 조립한다."""
+        if not self.slot_drafts:
+            raise ValueError("파트에는 슬롯이 하나 이상 있어야 합니다.")
+        if len(self.slot_drafts) > 16:
+            raise ValueError("슬롯은 최대 16개까지 저장할 수 있습니다.")
+
+        conditions = [bytes(draft["condition"]) for draft in self.slot_drafts]
+        header_size = 4 + len(self.slot_drafts) * 4
+        condition_starts: list[int] = []
+        cursor = header_size
+        for condition in conditions:
+            condition_starts.append(cursor)
+            cursor += len(condition)
+
+        # 본문 안의 30 1D는 파트 기준 절대 오프셋이므로 슬롯 수나 조건
+        # 길이가 바뀌면 새 본문 시작점에 맞춰 다시 기준을 잡아야 한다.
+        body_starts: list[int] = []
+        for draft in self.slot_drafts:
+            body_starts.append(cursor)
+            cursor += len(bytes(draft["body"]))
+
+        saved_tokens = self.body_tokens
+        saved_body_offset = int(getattr(self, "body_part_offset", 4))
+        bodies: list[bytes] = []
+        try:
+            for draft, new_body_start in zip(self.slot_drafts, body_starts):
+                old_body_start = int(draft["body_start"])
+                raw_body = bytes(draft["body"])
+                self.body_tokens = self._decode_body_tokens(
+                    raw_body, body_part_offset=old_body_start,
+                )
+                self.body_part_offset = new_body_start
+                encoded_body = self._encode_body_tokens()
+                if len(encoded_body) != len(raw_body):
+                    raise ValueError("본문 재배치 중 명령 길이가 예기치 않게 바뀌었습니다.")
+                bodies.append(encoded_body)
+        finally:
+            self.body_tokens = saved_tokens
+            self.body_part_offset = saved_body_offset
+
+        changed = bytearray(struct.pack("<HH", step, len(self.slot_drafts)))
+        changed.extend(b"\x00" * (len(self.slot_drafts) * 4))
+        for slot_index, (condition_start, body_start) in enumerate(
+            zip(condition_starts, body_starts),
+        ):
+            if condition_start - 4 > 0xFFFF or body_start - 4 > 0xFFFF:
+                raise ValueError("슬롯 오프셋이 16비트 저장 범위를 벗어났습니다.")
+            struct.pack_into(
+                "<HH", changed, 4 + slot_index * 4,
+                condition_start - 4, body_start - 4,
+            )
+        changed.extend(b"".join(conditions))
+        changed.extend(b"".join(bodies))
+        return bytes(changed)
+
     def _apply_editor(self) -> bool:
         if self.current_index is None:
             return True
         index = self.current_index
         old = self.parts[index]
         try:
-            step, slots = disev.validate_part(old, index)
-            if len(slots) != 1:
-                raise ValueError("현재 버전은 슬롯 1개인 파트만 편집할 수 있습니다.")
-            condition_start, body_start = slots[0]
-            condition = self._encode_condition_tokens()
-            body = self._encode_body_tokens()
-            changed = bytearray(old[:condition_start] + condition + body)
-            struct.pack_into("<H", changed, 6, condition_start + len(condition) - 4)
-            changed_bytes = bytes(changed)
+            step, _old_slots = disev.validate_part(old, index)
+            if not self._capture_current_slot_draft(show_error=False):
+                raise ValueError("현재 슬롯의 조건 또는 명령을 저장할 수 없습니다.")
+            changed_bytes = self._assemble_slot_part(step)
             disev.validate_part(changed_bytes, index)
         except (ValueError, struct.error) as exc:
             messagebox.showerror(ui("apply_failed"), str(exc), parent=self.root)
@@ -7671,7 +9195,10 @@ class DisevEditor:
 
         self.parts[index] = changed_bytes
         self._script_media_name_cache.clear()
-        if changed_bytes == self.original_parts[index]:
+        if (
+            self.part_source_indices[index] is not None
+            and changed_bytes == self.original_parts[index]
+        ):
             self.modified.discard(index)
         else:
             self.modified.add(index)
@@ -7687,7 +9214,10 @@ class DisevEditor:
             return
         index = self.current_index
         self.parts[index] = self.original_parts[index]
-        self.modified.discard(index)
+        if self.part_source_indices[index] is None:
+            self.modified.add(index)
+        else:
+            self.modified.discard(index)
         self.pending = False
         self._load_part(index)
         self._refresh_tree(keep_index=index)
@@ -7695,7 +9225,12 @@ class DisevEditor:
         self.status_var.set(ui("status_reverted", index))
 
     def _update_dirty_status(self) -> None:
-        self.dirty_var.set(f"수정된 파트: {len(self.modified)}개" if self.modified else "")
+        messages: list[str] = []
+        if self.modified:
+            messages.append(f"수정된 파트: {len(self.modified)}개")
+        if self.structure_modified:
+            messages.append("파트 구성 변경")
+        self.dirty_var.set(" · ".join(messages))
 
     def _save(self) -> None:
         if self.disev_path is None:
@@ -7708,7 +9243,13 @@ class DisevEditor:
         if not self.parts:
             return
         try:
-            rebuilt = rebuild_archive(self.archive, self.entries, self.parts, self.modified)
+            rebuilt = rebuild_archive(
+                self.archive,
+                self.entries,
+                self.parts,
+                self.modified,
+                self.part_source_indices,
+            )
             verify_archive(rebuilt, self.parts)
             backup_path: Path | None = None
             if make_backup and target.exists():
@@ -7717,7 +9258,7 @@ class DisevEditor:
                 # DISEV_20260830_183015.CDS 형식으로 저장한다.
                 backup_path = target.with_name(f"{target.stem}_{stamp}{target.suffix}")
                 shutil.copy2(target, backup_path)
-            temporary = target.with_name(target.name + ".disev_editor.tmp")
+            temporary = target.with_name(target.name + ".event_editor.tmp")
             temporary.write_bytes(rebuilt)
             temporary.replace(target)
         except (OSError, ValueError, struct.error) as exc:
@@ -7728,7 +9269,9 @@ class DisevEditor:
         self.archive = rebuilt
         self.entries = disev.parse_archive(rebuilt)
         self.original_parts = list(self.parts)
+        self.part_source_indices = list(range(len(self.parts)))
         self.modified.clear()
+        self.structure_modified = False
         self._refresh_tree(keep_index=self.current_index)
         self._update_dirty_status()
         backup_message = ui("backup_message", backup_path.name) if backup_path else ""
@@ -7740,7 +9283,7 @@ class DisevEditor:
         self.status_var.set(ui("status_saved", self.disev_path))
 
     def _confirm_abandon_archive(self) -> bool:
-        if not self.modified and not self.pending:
+        if not self.modified and not self.pending and not self.structure_modified:
             return True
         return messagebox.askyesno(
             ui("unsaved_changes"),
@@ -7764,7 +9307,7 @@ class DisevEditor:
     @staticmethod
     def _extract_update_executable(archive_path: str) -> str:
         """업데이트 ZIP에서 단일 DISEV EXE만 임시 폴더에 안전하게 푼다."""
-        extract_directory = tempfile.mkdtemp(prefix="DISEV_Editor_update_")
+        extract_directory = tempfile.mkdtemp(prefix="Event_Editor_update_")
         try:
             with zipfile.ZipFile(archive_path) as archive:
                 candidates = [entry for entry in archive.infolist()
@@ -7867,7 +9410,7 @@ class DisevEditor:
             try:
                 request = Request(UPDATE_RELEASES_URL, headers={
                     "Accept": "application/vnd.github+json",
-                    "User-Agent": f"DISEV-Editor/{APP_VERSION}",
+                    "User-Agent": f"Event-Editor/{APP_VERSION}",
                 })
                 with urlopen(request, timeout=8) as response:
                     history = self._format_update_history(json.loads(response.read().decode("utf-8")))
@@ -7924,7 +9467,7 @@ class DisevEditor:
             try:
                 request = Request(UPDATE_LATEST_URL, headers={
                     "Accept": "application/vnd.github+json",
-                    "User-Agent": f"DISEV-Editor/{APP_VERSION}",
+                    "User-Agent": f"Event-Editor/{APP_VERSION}",
                 })
                 with urlopen(request, timeout=8) as response:
                     release = json.loads(response.read().decode("utf-8"))
@@ -7988,7 +9531,7 @@ class DisevEditor:
                 download_path = partial_path[:-5]
                 digest = hashlib.sha256()
                 request = Request(str(asset["browser_download_url"]), headers={
-                    "Accept": "application/octet-stream", "User-Agent": f"DISEV-Editor/{APP_VERSION}",
+                    "Accept": "application/octet-stream", "User-Agent": f"Event-Editor/{APP_VERSION}",
                 })
                 with urlopen(request, timeout=30) as response, open(partial_path, "wb") as output:
                     for chunk in iter(lambda: response.read(1024 * 1024), b""):
@@ -8030,8 +9573,8 @@ class DisevEditor:
             self._set_update_menu_state("normal")
             return
         target_path = os.path.abspath(sys.executable)
-        script_path = os.path.join(tempfile.gettempdir(), f"DISEV_Editor_update_{os.getpid()}.cmd")
-        notice_path = os.path.join(tempfile.gettempdir(), f"DISEV_Editor_update_notice_{os.getpid()}.json")
+        script_path = os.path.join(tempfile.gettempdir(), f"Event_Editor_update_{os.getpid()}.cmd")
+        notice_path = os.path.join(tempfile.gettempdir(), f"Event_Editor_update_notice_{os.getpid()}.json")
         try:
             with open(notice_path, "w", encoding="utf-8") as output:
                 json.dump({"version": str(release.get("tag_name", "")).lstrip("vV"),
@@ -8057,7 +9600,7 @@ class DisevEditor:
         self.root.after(100, self.root.destroy)
 
     def _close(self) -> None:
-        if self.modified or self.pending:
+        if self.modified or self.pending or self.structure_modified:
             answer = messagebox.askyesnocancel(
                 ui("exit"),
                 ui("save_before_exit_prompt"),
@@ -8068,9 +9611,9 @@ class DisevEditor:
             if answer:
                 if self.disev_path is None:
                     return
-                before = bool(self.modified or self.pending)
+                before = bool(self.modified or self.pending or self.structure_modified)
                 self._write_archive(self.disev_path, make_backup=True)
-                if before and (self.modified or self.pending):
+                if before and (self.modified or self.pending or self.structure_modified):
                     return
         self._stop_audio_preview()
         self._close_media_preview()
@@ -8086,7 +9629,7 @@ class DisevEditor:
 
 def main() -> int:
     root = tk.Tk()
-    DisevEditor(root)
+    EventEditor(root)
     root.mainloop()
     return 0
 

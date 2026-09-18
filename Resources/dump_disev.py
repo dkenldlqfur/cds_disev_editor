@@ -204,6 +204,8 @@ FORMS = (
     Form(b"\x00\x0C", 4, "CG 애니메이션 재생"),
     Form(b"\x00\x1F", 4, "EVSTILL 이미지 표시"),
     Form(b"\x01\x0B", 4, "발견물 등록/발견 처리"),
+    # 특수 개방 대상 도시의 미등장·비활성 비트를 해제하고 발견 알림을 처리한다.
+    Form(b"\x01\x08", 4, "도시 발견·개방"),
     Form(b"\x43\x2C\x08", 15, "교역품 조건 분기", 13),
     Form(b"\x43\x2D\x1C", 12, "능력치 비교 분기", 10),
     Form(b"\x43\x2E\x1C", 12, "능력치 비교2 분기", 10),
@@ -236,11 +238,33 @@ FORMS = (
     Form(b"\x1B\x16", 4, "연도 조건"),
     Form(b"\x1B\x17", 6, "연월 조건"),
     Form(b"\x1C\x16", 4, "현재 연도 일치 조건"),
+    Form(b"\x1C\x17", 6, "현재 연월 일치 조건"),
+    Form(b"\x5D\x17", 3, "현재 월 일치 조건"),
     Form(b"\x36\x16", 7, "연도 범위 조건"),
-    Form(b"\x1B\x0B", 4, "발견 완료 조건"),
-    Form(b"\x5E\x0B", 4, "미발견 조건"),
-    Form(b"\x2A\x1C", 9, "수치 비교 (이상)"),
-    Form(b"\x2B\x1C", 9, "능력치 조건"),
+    # 발견물 레코드의 두 진행 슬롯 중 하나라도 활성인지 검사한다.
+    # HIST_EV의 도시 개방 조건에서 사용하며, ID는 파트가 아닌 발견물 ID다.
+    Form(b"\x02\x0B", 4, "발견 기록 있음 조건"),
+    # 의도는 발견 기록 시점으로부터 지정 연수가 지났는지 비교하는 조건이다.
+    # 다만 한국어판 EXE는 `발견 연도 - 현재 연도`를 부호 없는 값으로 비교해
+    # 정상 게임 연도에서는 발견 여부와 무관하게 사실상 항상 참이 된다.
+    Form(b"\x1B\x0B", 7, "발견 후 경과 년수 조건 (패치 필요)"),
+    # 02 0B의 반대 판정. 최상위 조건 청크에는 없지만 43 아래 분기식에서 사용된다.
+    Form(b"\x3A\x0B", 4, "발견 기록 없음 조건"),
+    # 발견물 런타임 레코드 +0x16의 상태 마커에서 bit 0x0080을 검사한다.
+    # 세이브의 발견(0x4C)과 보고 완료(0xCC)를 가르는 비트이므로 보고 완료
+    # 판정이지만, 현재 DISEV.CDS/HIST_EV.CDS 어디에도 최상위 사용 예가 없다.
+    Form(b"\x5E\x0B", 4, "발견물 보고 완료 조건 (미사용)"),
+    # 국가 ID와 도시 ID를 함께 받아 도시의 현재 소속 국가를 비교한다.
+    # 27은 일치, 28은 불일치일 때 참이다.
+    Form(b"\x27\x00", 7, "도시 국적 일치 조건"),
+    Form(b"\x28\x00", 7, "도시 국적 불일치 조건"),
+    Form(b"\x27\x08", 4, "도시 등장·활성 조건"),
+    Form(b"\x28\x08", 4, "도시 미등장·비활성 조건"),
+    Form(b"\x24\x10", 4, "현재 도시 시설 보유 조건"),
+    Form(b"\x27\x10", 7, "지정 도시 시설 보유 조건"),
+    Form(b"\x28\x10", 7, "지정 도시 시설 미보유 조건"),
+    Form(b"\x2A\x1C", 9, "수치 비교 (초과)"),
+    Form(b"\x2B\x1C", 9, "수치 비교 (이상)"),
     Form(b"\x2C\x1C", 9, "수치 비교 (미만)"),
     Form(b"\x2D\x1C", 9, "수치 비교 (이하)"),
     # R(100) <= 상태값+1 결과를 현재 참/거짓 판정으로 저장한다.
@@ -259,6 +283,9 @@ FORMS = (
     Form(b"\x22\x1C", 9, "능력치 설정"),
     Form(b"\x19\x14", 6, "금화 증가"),
     Form(b"\x1A\x14", 6, "금화 감소"),
+    # 도시 런타임 레코드 +0x08의 규모 단계를 변경하고 0~7로 제한한다.
+    Form(b"\x19\x08", 9, "도시 규모 증가"),
+    Form(b"\x1A\x08", 9, "도시 규모 감소"),
     # 값에 20을 곱한 뒤 50ms 타이머 틱으로 기다리므로 값 1은 정확히 1초다.
     Form(b"\x29\x1A", 6, "대기"),
     # 코인 게임(종류 4)은 앞의 u32를 읽기만 하며, 발라몬의 탑(종류 5)은
@@ -269,22 +296,35 @@ FORMS = (
     Form(b"\x12\x05", 4, "아이템 비소지 조건"),
     Form(b"\x0F\x0E", 4, "힌트 상태 활성 조건"),
     Form(b"\x12\x0E", 4, "힌트 상태 미활성 조건"),
+    Form(b"\x05\x0E", 4, "힌트 획득"),
+    # 힌트 상태 플래그에 0x08을 설정해 미획득 상태로 등장·등록한다.
+    Form(b"\x26\x0E", 4, "힌트 등장·등록"),
     Form(b"\x00\x05", 4, "아이템 획득"),
     Form(b"\x57\x05", 4, "소지품 제거"),
     # 해당 교역품의 발견·활성 상태가 0일 때 1로 설정해 특산품 판매를 해금한다.
     Form(b"\x01\x15", 4, "교역품 활성화"),
+    # 21 08 뒤에는 도시 u16, 피연산자 종류, 값 u16이 온다. 종류 00은
+    # 소속 국가, 18은 도시 상태, 19는 문화권 설정이다.
+    Form(b"\x21\x08", 7, "도시 필드 설정"),
     Form(b"\x22\x08", 4, "도시 제거"),
     Form(b"\x23\x08", 4, "도시 점령지 설정"),
     Form(b"\x25\x08", 4, "도시 점령지 해제"),
     Form(b"\x26\x08", 4, "도시 생성/활성화"),
+    # 국가 런타임 레코드 +0x04를 1로 설정해 역사 이벤트 국가를 생성한다.
+    Form(b"\x26\x00", 4, "국가 생성"),
     Form(b"\x22\x10", 7, "도시 시설 제거"),
-    Form(b"\x26\x10", 7, "도시 시설 설정"),
+    Form(b"\x26\x10", 7, "도시 시설 추가"),
     Form(b"\x3C\x08", 4, "이벤트 대상 도시 이동"),
     Form(b"\x0E\x03", 4, "음원 재생"),
     # 델포이 성지에서 성격·자녀 적성·배우자·수명 신탁을 출력한다.
     # 상태값이나 현재 이벤트의 참·거짓 결과는 변경하지 않는다.
     Form(b"\x31", 1, "델포이 신탁 출력"),
+    # 전역 이동/함대 상태만 읽으므로 DISEV와 HIST_EV 양쪽에서 쓸 수 있다.
+    Form(b"\x59", 1, "함대 선박 보유 조건"),
     Form(b"\x5A", 1, "후원자 계약 없음 조건"),
+    Form(b"\x5F", 1, "해상 이동 중 조건"),
+    Form(b"\x60", 1, "육상 이동 중 조건"),
+    Form(b"\x67", 1, "함대 선박 보유·육상 이동 아님 조건"),
     Form(b"\x50", 1, "OR 연결"),
     Form(b"\x0D\x0D", 4, "해상 전투"),
     Form(b"\x4A", 1, "게임 오버"),
@@ -546,6 +586,10 @@ def describe_form(form: Form, raw: bytes, absolute_offset: int) -> str:
         return f"연도 >= {read_u16(raw, 2)}"
     if kind == "연월 조건":
         return f"연월 조건: {read_u16(raw, 4)}년 {raw[2]}월"
+    if kind == "현재 연월 일치 조건":
+        return f"현재 연월 일치: {read_u16(raw, 4)}년 {raw[2]}월"
+    if kind == "현재 월 일치 조건":
+        return f"현재 월 == {raw[2]}월"
     if kind == "현재 연도 일치 조건":
         return f"현재 연도 == {read_u16(raw, 2)}"
     if kind == "연도 범위 조건":
@@ -558,13 +602,15 @@ def describe_form(form: Form, raw: bytes, absolute_offset: int) -> str:
         return f"무작위 확률 조건: {success_count} / {denominator}"
     if kind in ("인물 이벤트 활성 조건", "후원자 활성 조건"):
         return f"{kind}: 번호 {read_u16(raw, 2)}"
-    if kind in ("발견 완료 조건", "미발견 조건"):
+    if kind in ("발견 기록 있음 조건", "발견 기록 없음 조건", "발견물 보고 완료 조건 (미사용)"):
         return f"{kind}: 발견물 ID {read_u16(raw, 2)}"
-    if kind in ("능력치 조건", "수치 비교 (이상)", "수치 비교 (이하)", "수치 비교 (미만)"):
+    if kind == "발견 후 경과 년수 조건 (패치 필요)":
+        return f"{kind}: 발견물 ID {read_u16(raw, 2)}, 기준 {read_u16(raw, 5)}년"
+    if kind in ("수치 비교 (초과)", "수치 비교 (이상)", "수치 비교 (이하)", "수치 비교 (미만)"):
         stat = read_u16(raw, 2)
         value = read_u32(raw, 5)
         operator = {
-            "능력치 조건": ">",
+            "수치 비교 (초과)": ">",
             "수치 비교 (이상)": ">=",
             "수치 비교 (이하)": "<=",
             "수치 비교 (미만)": "<",
@@ -591,10 +637,15 @@ def describe_form(form: Form, raw: bytes, absolute_offset: int) -> str:
     if kind in ("금화 증가", "금화 감소"):
         symbol = "+" if kind == "금화 증가" else "-"
         return f"금화 {symbol}{read_u32(raw, 2)}"
+    if kind in ("도시 규모 증가", "도시 규모 감소"):
+        symbol = "+" if kind == "도시 규모 증가" else "-"
+        return f"도시 ID {read_u16(raw, 2)} 규모 {symbol}{read_u32(raw, 5)}"
     if kind in ("아이템 소지 조건", "아이템 비소지 조건", "아이템 획득", "소지품 제거"):
         return f"{kind}: 아이템 ID {read_u16(raw, 2)}"
     if kind in ("힌트 상태 활성 조건", "힌트 상태 미활성 조건"):
         return f"{kind}: 힌트 상태 ID {read_u16(raw, 2)}"
+    if kind in ("힌트 획득", "힌트 등장·등록"):
+        return f"{kind}: 힌트 ID {read_u16(raw, 2)}"
     if kind == "해상 전투":
         return f"해상 전투: 상대 ID {read_u16(raw, 2)}"
     if kind == "대기":
@@ -616,11 +667,38 @@ def describe_form(form: Form, raw: bytes, absolute_offset: int) -> str:
             3: "낚시 게임", 6: "화살표 입방체 퍼즐",
         }
         return f"미니게임: {names.get(game_type, f'종류 {game_type}')}"
-    if kind in ("도시 제거", "도시 점령지 설정", "도시 점령지 해제", "도시 생성/활성화"):
+    if kind in ("도시 국적 일치 조건", "도시 국적 불일치 조건"):
+        return f"{kind}: 국가 ID {read_u16(raw, 2)}, 도시 ID {read_u16(raw, 5)}"
+    if kind in ("도시 등장·활성 조건", "도시 미등장·비활성 조건"):
         return f"{kind}: 도시 ID {read_u16(raw, 2)}"
+    if kind == "도시 필드 설정":
+        city_id = read_u16(raw, 2)
+        operand_type = raw[4]
+        value = read_u16(raw, 5)
+        if operand_type == 0x00:
+            return f"도시 소속 국가 설정: 도시 ID {city_id}, 국가/세력 ID {value}"
+        if operand_type == 0x18:
+            status_names = {
+                0: "통상", 1: "전염병", 2: "기근", 3: "대기근",
+                4: "풍작", 5: "대풍작", 6: "대한파", 7: "혹서",
+                8: "노동력부족", 9: "전쟁", 10: "축제", 11: "호경기",
+                12: "불경기", 13: "대조선",
+            }
+            return f"도시 상태 설정: 도시 ID {city_id}, {status_names.get(value, f'미확인 상태 {value}')}"
+        if operand_type == 0x19:
+            return f"도시 문화권 설정: 도시 ID {city_id}, 문화권 ID {value}"
+        return f"도시 필드 설정: 도시 ID {city_id}, 종류 0x{operand_type:02X}, 값 {value} (미확인)"
+    if kind == "현재 도시 시설 보유 조건":
+        return f"{kind}: 시설 ID {read_u16(raw, 2)}"
+    if kind in ("지정 도시 시설 보유 조건", "지정 도시 시설 미보유 조건"):
+        return f"{kind}: 시설 ID {read_u16(raw, 2)}, 도시 ID {read_u16(raw, 5)}"
+    if kind in ("도시 발견·개방", "도시 제거", "도시 점령지 설정", "도시 점령지 해제", "도시 생성/활성화"):
+        return f"{kind}: 도시 ID {read_u16(raw, 2)}"
+    if kind == "국가 생성":
+        return f"국가 생성: 국가/세력 ID {read_u16(raw, 2)}"
     if kind == "이벤트 대상 도시 이동":
         return f"이벤트 대상 도시 이동: 도시 ID {read_u16(raw, 2)}"
-    if kind in ("도시 시설 제거", "도시 시설 설정"):
+    if kind in ("도시 시설 제거", "도시 시설 추가"):
         return f"{kind}: 시설 비트 {read_u16(raw, 2)}, 도시 ID {read_u16(raw, 5)}"
     if form.jump_offset >= 0 and form.jump_offset + 2 <= len(raw):
         relative = read_u16(raw, form.jump_offset)
@@ -664,21 +742,24 @@ def parse_commands(
             i += 1
             continue
 
-        # 20 0A [문자열] 00 08 [도시 u16]은 일반 대사가 아니라 현재 날짜와
-        # 도시 키를 붙여 소문·기록 링 버퍼에 저장하는 명령이다. 대사 판별보다
-        # 먼저 처리하지 않으면 0x20을 대화창 플래그로 오인한다.
+        # 20 0A [문자열] 00 08 [도시 u16] / 19 [문화권 u16]은 일반 대사가
+        # 아니라 현재 날짜와 대상 키를 붙여 소문·기록 링 버퍼에 저장하는 명령이다.
+        # 대사 판별보다 먼저 처리하지 않으면 0x20을 대화창 플래그로 오인한다.
         if i + 6 <= end and data[i : i + 2] == b"\x20\x0A":
             terminator = data.find(b"\0", i + 2, end)
-            if terminator >= 0 and terminator + 4 <= end and data[terminator + 1] == 0x08:
+            if terminator >= 0 and terminator + 4 <= end and data[terminator + 1] in (0x08, 0x19):
                 raw = data[i : terminator + 4]
-                city_id = read_u16(data, terminator + 2)
+                target_type = data[terminator + 1]
+                target_id = read_u16(data, terminator + 2)
+                target_label = "도시" if target_type == 0x08 else "문화권"
+                command_label = "도시 소문 등록" if target_type == 0x08 else "문화권 소문 등록"
                 message = normalize_dialogue_display(safe_text(data[i + 2 : terminator]))
                 offset_prefix = f"    +0x{i:04X}  " if include_offsets else "    "
                 prefix = f"{offset_prefix}{hex_bytes(raw[:18]):<53} " if include_hex else offset_prefix
-                lines.append(f'{prefix}도시 소문 등록: 도시 ID {city_id}, "{message}"')
+                lines.append(f'{prefix}{command_label}: {target_label} ID {target_id}, "{message}"')
                 if include_hex and len(raw) > 18:
-                    lines.append(f"             ... 도시 소문 명령 전체 {len(raw)}바이트")
-                command_counts["도시 소문 등록"] += 1
+                    lines.append(f"             ... {target_label} 소문 명령 전체 {len(raw)}바이트")
+                command_counts[command_label] += 1
                 i = terminator + 4
                 continue
 
@@ -754,11 +835,11 @@ def load_editor_parser():
     global _EDITOR_PARSER
     if _EDITOR_PARSER is not None:
         return _EDITOR_PARSER
-    editor_path = Path(__file__).resolve().parents[1] / "DISEV_Editor.pyw"
+    editor_path = Path(__file__).resolve().parents[1] / "Event_Editor.pyw"
     project_path = str(editor_path.parent)
     if project_path not in sys.path:
         sys.path.insert(0, project_path)
-    spec = importlib.util.spec_from_file_location("_disev_editor_dump_parser", editor_path)
+    spec = importlib.util.spec_from_file_location("_event_editor_dump_parser", editor_path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"편집기 파서를 불러올 수 없습니다: {editor_path}")
     module = importlib.util.module_from_spec(spec)
@@ -780,8 +861,8 @@ def parse_canonical_chunk(
     editor = load_editor_parser()
     chunk = data[start:end]
     if condition:
-        parser_owner = object.__new__(editor.DisevEditor)
-        decoded = editor.DisevEditor._decode_condition_tokens(parser_owner, chunk)
+        parser_owner = object.__new__(editor.EventEditor)
+        decoded = editor.EventEditor._decode_condition_tokens(parser_owner, chunk)
         if decoded is None:
             return parse_commands(data, start, end, None, command_counts, unknown_counts)
         tokens: list[dict[str, object]] = []
@@ -792,7 +873,7 @@ def parse_canonical_chunk(
         if consumed < len(chunk) and chunk[consumed] == 0xFF:
             tokens.append({"kind": "덩이/갈래 끝", "raw": b"\xFF"})
     else:
-        tokens = editor.DisevEditor._decode_body_tokens(chunk, body_part_offset=start)
+        tokens = editor.EventEditor._decode_body_tokens(chunk, body_part_offset=start)
 
     lines: list[str] = []
     offset = start
@@ -806,8 +887,7 @@ def parse_canonical_chunk(
         kind = str(token["kind"])
         display_kind = kind
         if not condition:
-            group, subkind = editor.BODY_KIND_TO_GROUP.get(kind, (kind, ""))
-            detail = editor.BODY_KIND_TO_DETAIL.get(kind, "")
+            group, subkind, detail = editor.BODY_KIND_TO_PATH.get(kind, (kind, "", ""))
             display_kind = " | ".join(value for value in (group, subkind, detail) if value)
         details: list[str] = []
         for key in detail_keys:

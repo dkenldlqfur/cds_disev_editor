@@ -7,7 +7,7 @@ with open(os.path.join(_project_root, 'Resources', 'data', 'app_config.json'), e
     _app_version = json.load(_config_file)['version']
 
 a = Analysis(
-    [os.path.join(_project_root, 'DISEV_Editor.pyw')],
+    [os.path.join(_project_root, 'Event_Editor.pyw')],
     pathex=[_project_root],
     binaries=[],
     datas=[(os.path.join(_project_root, 'Resources'), 'Resources')],
@@ -39,7 +39,7 @@ exe = EXE(
     splash,
     splash.binaries,
     [],
-    name='DISEV_Editor',
+    name='Event_Editor',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

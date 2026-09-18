@@ -16,6 +16,7 @@ dist/
 
 # Editor/runtime temporary files
 *.disev_editor.tmp
+*.event_editor.tmp
 *.part
 *.bak
 
