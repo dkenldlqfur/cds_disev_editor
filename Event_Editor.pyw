@@ -3823,11 +3823,13 @@ class EventEditor:
             self.body_detail_label.configure(text="동작:")
             self.body_detail_label.grid(row=0, column=4, sticky="w")
             self.body_detail_combo.grid(row=0, column=5, sticky="w", padx=(5, 10))
-        elif kind in DIALOGUE_KINDS:
-            self.body_detail_label.configure(text="화자:")
-            self.body_detail_label.grid(row=0, column=4, sticky="w")
+        if kind in DIALOGUE_KINDS:
+            # 대사는 일반/예·아니오/다중 선택이 3차 동작을 차지하므로
+            # 화자 선택을 3차 콤보의 오른쪽에 독립적으로 표시한다.
+            speaker_column = 6 if detail_kinds else 4
+            self.body_speaker_label.grid(row=0, column=speaker_column, sticky="w")
             self.body_speaker_combo.configure(state="readonly")
-            self.body_speaker_combo.grid(row=0, column=5, sticky="w", padx=(5, 10))
+            self.body_speaker_combo.grid(row=0, column=speaker_column + 1, sticky="w", padx=(5, 10))
 
         aux = self.body_classification_row
         value_row = self.body_input_row
