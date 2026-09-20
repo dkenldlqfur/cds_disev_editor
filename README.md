@@ -1,22 +1,22 @@
-# 대항해시대 3 이벤트 에디트
+# 대항해시대 3 이벤트 에디터
 
-대항해시대 3 한국어판의 `DISEV.CDS` 발견물 이벤트와 `HIST_EV.CDS` 역사 이벤트를 확인하고 편집하는 Windows용 도구입니다.
+대항해시대 3 한국어판의 `DISEV.CDS` 발견물 이벤트, `HIST_EV.CDS` 역사 이벤트, `ECQ.CDS`·`EDG.CDS`·`EEX.CDS`·`EHT.CDS`·`PCQ.CDS`·`PDG.CDS`·`PEX.CDS`·`PHT.CDS` 퀘스트 이벤트, `STORY0.CDS`·`STORY1.CDS` 스토리 이벤트를 확인하고 편집하는 Windows용 도구입니다.
 
-역사 이벤트의 파일 구조, 조건·명령 및 파트별 역분석 결과는 [HIST_EV 분석 문서](docs/HIST_EV_ANALYSIS.md)에 계속 갱신합니다.
+역사 이벤트의 파일 구조, 조건·명령 및 파트별 역분석 결과는 [HIST_EV 분석 문서](docs/HIST_EV_ANALYSIS.md)에, 퀘스트 이벤트 분석은 [퀘스트 분석 문서](docs/ECQ_ANALYSIS.md)에, 스토리 이벤트 분석은 [STORY 분석 문서](docs/STORY_ANALYSIS.md)에 계속 갱신합니다.
 
 최신 버전: [![GitHub Release](https://img.shields.io/github/v/release/dkenldlqfur/cds_disev_editor?display_name=tag&label=%EC%B5%9C%EC%8B%A0%20%EB%B2%84%EC%A0%84)](https://github.com/dkenldlqfur/cds_disev_editor/releases/latest)
 
 ## 주요 기능
 
-- `DISEV.CDS`·`HIST_EV.CDS` 이벤트 아카이브 열기·저장
+- `DISEV.CDS`·`HIST_EV.CDS`·퀘스트 이벤트(`ECQ`·`EDG`·`EEX`·`EHT`·`PCQ`·`PDG`·`PEX`·`PHT`)·스토리 이벤트(`STORY0`·`STORY1`) 아카이브 열기·저장
 - `CDS_95.EXE`의 발견물 목록과 이벤트 파트 매핑
 - 조건과 본문 명령을 사람이 읽을 수 있는 형태로 표시·편집
-- 공통 EXE 조건 39종을 두 파일에서 모두 제공하되, 발견물 이벤트는 발생 위치·소지품/힌트 중심으로, 역사 이벤트는 발생 시점·발견 진행·도시 상태 중심으로 분류·정렬
-- 본문 명령을 `기능 → 대상 계열 → 동작`의 3단계로 분류하고, 양쪽 원본 공통·발견물 이벤트·역사 이벤트·검증된 공통 처리기 범위를 구분
+- 조건·명령별 사용 가능 이벤트 파일 타입을 중앙 표로 관리하고, 연 파일 타입에서 안전하게 편집 가능한 항목만 표시
+- 본문 명령을 `기능 → 대상 계열 → 동작`의 3단계로 분류
 - 음원 재생 명령에서 ID와 대상 이름이 표시되는 콤보박스로 MP3 BGM·`WAVES.CDS` 효과음을 선택하고 미리듣기
 - 미디어 명령에서 실제 자산 범위와 연결 발견물 이름이 표시되는 콤보박스로 `DSTILL`·`EVSTILL`·CG·AVI를 선택하고 팝업으로 미리보기
 - 특수 조우 명령에서 `EVANIME.CDS`의 백경·돌고래·날치·유령선·오로라·플라밍고·모르포 나비·유빙 애니메이션 미리보기
-- 명령 설명 탭에서 파일별 UI 분류 경로, 실행 의미, 원본 사용 여부와 검증 범위를 확인
+- 명령 설명 탭에서 실행 의미, 사용 가능 파일 타입, 원본 사용 확인 범위를 확인
 - 조건/본문 길이 변경 시 파트 크기와 본문 시작 위치 자동 보정
 - 삽입·제거 시 상대 행 이동 대상 자동 보정
 - 조건, 명령, 발견물 목록의 검색·선택·되돌리기
@@ -26,7 +26,7 @@
 
 ## 사용 방법
 
-1. `Event_Editor.exe`를 실행합니다.
+1. `CDS_Event_Editor.exe`를 실행합니다.
 2. **DISEV 열기**를 눌러 게임 폴더의 `DISEV.CDS`를 선택합니다.
 3. 같은 폴더에 `CDS_95.EXE`가 있으면 발견물 이름과 파트가 자동으로 연결됩니다.
 4. 왼쪽에서 발견물을 선택하고, 오른쪽에서 조건과 명령을 수정합니다.
@@ -42,16 +42,18 @@
 
 ## 자동 업데이트
 
-시작 시 GitHub의 최신 정식 Release를 확인합니다. 새 버전이 있으면 상단에 **업데이트 확인** 버튼이 나타납니다.
+시작 시 GitHub의 최신 정식 Release를 확인합니다. 새 버전이 있으면 도구 중앙에 업데이트 팝업이 표시됩니다.
 
 업데이트는 다음 순서로 처리됩니다.
 
 1. Release ZIP을 다운로드하고, 제공된 경우 SHA-256을 검증합니다.
-2. ZIP에서 `Event_Editor.exe`를 추출합니다.
+2. ZIP에서 `CDS_Event_Editor.exe`를 추출합니다.
 3. 편집기가 종료된 뒤 기존 EXE를 새 파일로 교체하고 재실행합니다.
 4. 새 버전에서 업데이트 내역을 표시합니다.
 
 자동 업데이트 설치는 배포 EXE에서만 동작하며, `.pyw` 직접 실행에서는 설치하지 않습니다.
+
+이전 `CDS_DISEV_Editor` 및 `Event_Editor` 배포본은 자동 업데이트 호환 대상이 아닙니다. 해당 버전을 사용 중이면 현재 `CDS_Event_Editor.exe`를 수동으로 내려받아 교체해야 합니다.
 
 ## 개발 환경
 
@@ -63,38 +65,42 @@
 소스 실행:
 
 ```powershell
-py -3 Event_Editor.pyw
+py -3 CDS_Event_Editor.pyw
 ```
 
 배포 빌드:
 
 ```powershell
-py -3 -m PyInstaller --noconfirm --clean Event_Editor.spec
+py -3 -m PyInstaller --noconfirm --clean CDS_Event_Editor.spec
 ```
 
-빌드 결과는 `dist/Event_Editor.exe`에 생성됩니다.
+빌드 결과는 `dist/CDS_Event_Editor.exe`에 생성됩니다.
 
 ## Release 배포 규칙
 
 자동 업데이트가 Release 파일을 찾으려면 아래 형식을 지켜야 합니다.
 
 - 태그: `v0.2`처럼 버전 번호 사용
-- ZIP 파일명: `Event_Editor_v0.2.zip`
-- ZIP 내부: `Event_Editor.exe` 파일 하나
+- ZIP 파일명: `CDS_Event_Editor_v0.2.zip`
+- ZIP 내부: `CDS_Event_Editor.exe` 파일 하나
 - Release 본문: 사용자에게 표시할 업데이트 내역
 
 버전은 `Resources/data/app_config.json`의 `version`을 먼저 올린 뒤 빌드합니다.
 
+```powershell
+py -3 -m PyInstaller --noconfirm --clean CDS_Event_Editor.spec
+```
+
 ## 프로젝트 구성
 
 ```text
-Event_Editor.pyw              편집기 본체
+CDS_Event_Editor.pyw          편집기 본체
 Resources/dump_disev.py       DISEV 아카이브 분석·입출력
 Resources/discovery_records.py 발견물 EXE 레코드 탐색·해석
 Resources/data/app_config.json 버전 및 업데이트 설정
 Resources/data/ui_texts.json  화면 문구
 Resources/splash.jpg          배포 EXE 시작 스플래시
 Resources/Icon.ico            프로그램 아이콘
-Event_Editor.spec             PyInstaller 배포 정의
+CDS_Event_Editor.spec         PyInstaller 배포 정의
 docs/HIST_EV_ANALYSIS.md      HIST_EV 구조·조건·명령 역분석 기록
 ```

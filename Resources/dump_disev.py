@@ -124,6 +124,20 @@ SPEAKER_NAMES = {
     # DISEV 발견 이벤트에서 확인한 추가 화자 태그.
     bytes.fromhex("8A C4 8E 40 8A AF"): "검사관",
     bytes.fromhex("83 43 83 93 83 66 83 42 83 49 82 CC 8E F1 97 CC"): "인디오의 족장",
+    # ECQ/EDG/EEX/EHT/PCQ/PDG/PEX/PHT/STORY0/STORY1 원본에서 추가 확인한
+    # 화자 태그. 인물 ID가 아니라 CP932 화자명 자체가 대사 앞에 기록된다.
+    bytes.fromhex("83 41 83 8B 83 94 83 40 83 8D 81 81 83 66 81 81 83 75 83 89 83 4B 83 93 83 54"): "아르발로 데 브라간사",
+    bytes.fromhex("83 43 83 58 83 89 83 80 8A CD 91 E0"): "이슬람 상인",
+    bytes.fromhex("83 66 83 42 83 49 83 53 81 81 83 8D 83 79 83 58"): "디오고 로페스",
+    bytes.fromhex("83 74 83 40 83 75 83 8A 83 58 81 81 83 66 81 81 83 74 83 46 83 8C 83 8D"): "파브리스 데 페레로",
+    bytes.fromhex("83 74 83 41 83 93 81 81 83 8D 83 68 83 8A 83 51 83 58 81 81 83 66 81 81 83 74 83 48 83 93 83 5A 83 4A"): "후안 로도리게스 데 폰세카",
+    bytes.fromhex("83 74 83 41 83 93 81 81 83 8D 83 68 83 8A 83 53"): "후안 로드리고",
+    bytes.fromhex("83 8C 83 49 83 93"): "레온",
+    bytes.fromhex("83 8D 83 62 83 52"): "로코",
+    bytes.fromhex("8D 60"): "항구",
+    # STORY1 파트 9의 후원자 ID 22. CP932 원문은
+    # フランシスコ＝デ＝エランツォ이며 뒤의 81 46은 대사 화자 끝 표식이다.
+    bytes.fromhex("83 74 83 89 83 93 83 56 83 58 83 52 81 81 83 66 81 81 83 47 83 89 83 93 83 63 83 48"): "프란시스코 데 에란쪼",
     bytes.fromhex("89 A4 95 E6 82 CC 94 D4 90 6C"): "왕묘의 파수꾼",
     bytes.fromhex("92 86 8D 91 82 CC 98 56 90 6C"): "중국의 노인",
     bytes.fromhex("93 90 91 AF 82 CC 93 AA"): "도적 두목",
@@ -835,7 +849,7 @@ def load_editor_parser():
     global _EDITOR_PARSER
     if _EDITOR_PARSER is not None:
         return _EDITOR_PARSER
-    editor_path = Path(__file__).resolve().parents[1] / "Event_Editor.pyw"
+    editor_path = Path(__file__).resolve().parents[1] / "CDS_Event_Editor.pyw"
     project_path = str(editor_path.parent)
     if project_path not in sys.path:
         sys.path.insert(0, project_path)

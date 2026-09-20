@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safe visual editor for the DISEV.CDS LS12 event archive.
+"""Safe visual editor for the CDS LS12 event archives.
 
 Version 0.1 deliberately keeps each condition/body chunk at its original byte
 length.  That makes byte edits safe without having to guess every branch
@@ -89,8 +89,8 @@ APP_TITLE = f"{ui('app_title')} v{APP_VERSION}"
 UPDATE_CONFIG = APP_CONFIG.get("update", {})
 UPDATE_CONFIG = UPDATE_CONFIG if isinstance(UPDATE_CONFIG, dict) else {}
 UPDATE_REPOSITORY = str(UPDATE_CONFIG.get("repository", "")).strip()
-UPDATE_ASSET_NAME = str(UPDATE_CONFIG.get("asset_name", "Event_Editor_v{version}.zip")).strip()
-UPDATE_EXECUTABLE_NAME = "Event_Editor.exe"
+UPDATE_ASSET_NAME = str(UPDATE_CONFIG.get("asset_name", "CDS_Event_Editor_v{version}.zip")).strip()
+UPDATE_EXECUTABLE_NAME = "CDS_Event_Editor.exe"
 UPDATE_LATEST_URL = (f"https://api.github.com/repos/{UPDATE_REPOSITORY}/releases/latest"
                      if UPDATE_REPOSITORY else "")
 UPDATE_RELEASES_URL = (f"https://api.github.com/repos/{UPDATE_REPOSITORY}/releases?per_page=100"
@@ -98,6 +98,42 @@ UPDATE_RELEASES_URL = (f"https://api.github.com/repos/{UPDATE_REPOSITORY}/releas
 UPDATE_HISTORY_MIN_VERSION = (0, 1, 0)
 EVENT_FILE_DISCOVERY = "discovery"
 EVENT_FILE_HISTORY = "history"
+EVENT_FILE_EXTERNAL_QUEST = "external_quest"
+EVENT_FILE_STORY = "story"
+EVENT_FILE_TYPES = (EVENT_FILE_DISCOVERY, EVENT_FILE_HISTORY, EVENT_FILE_EXTERNAL_QUEST, EVENT_FILE_STORY)
+EVENT_FILE_TYPE_LABELS = {
+    EVENT_FILE_DISCOVERY: "발견물 이벤트",
+    EVENT_FILE_HISTORY: "역사 이벤트",
+    EVENT_FILE_EXTERNAL_QUEST: "퀘스트 이벤트",
+    EVENT_FILE_STORY: "스토리 이벤트",
+}
+
+
+def _collect_file_type_support(
+    all_kinds: set[str], source_kinds: dict[str, set[str]], *, allow_missing: bool = False,
+) -> tuple[dict[str, frozenset[str]], dict[str, frozenset[str]]]:
+    """명령/조건별 지원 파일 타입과 파일 타입별 표시 목록을 한 번에 만든다."""
+    by_kind = {
+        kind: frozenset(file_type for file_type, kinds in source_kinds.items() if kind in kinds)
+        for kind in all_kinds
+    }
+    missing = sorted(kind for kind, file_types in by_kind.items() if not file_types)
+    if missing and not allow_missing:
+        raise RuntimeError(f"파일 타입 지원 표에 빠진 항목: {missing}")
+    by_type = {
+        file_type: frozenset(kind for kind, file_types in by_kind.items() if file_type in file_types)
+        for file_type in EVENT_FILE_TYPES
+    }
+    return by_kind, by_type
+
+# ECQ.CDS·EDG.CDS에서 확인한 외부 퀘스트 반환 형식이다. 일반 이벤트 결과
+# 코드(4C/4D/4E)와는 런타임 레코드에 기록하는 필드가 달라 별도 이름으로 둔다.
+ECQ_RETURN_COMMAND_KIND = "퀘스트 잔여 단계 반환값"
+ECQ_DEFAULT_RETURN_KIND = "퀘스트 기본 반환 상태"
+ECQ_ABORT_COMMAND_KIND = "퀘스트 처리 중단"
+EXTERNAL_QUEST_RETURN_COMMAND_KINDS = (
+    ECQ_RETURN_COMMAND_KIND, ECQ_DEFAULT_RETURN_KIND, ECQ_ABORT_COMMAND_KIND,
+)
 
 
 def parse_release_version(value: object) -> tuple[int, int, int] | None:
@@ -147,6 +183,18 @@ CONDITION_KINDS = {
     "국가": ((("국가 ID", 0, 65535),), lambda v: b"\x17\x00" + struct.pack("<H", v[0])),
     "도시": ((("도시 ID", 0, 65535),), lambda v: b"\x17\x08" + struct.pack("<H", v[0])),
     "건물": ((("건물 ID", 0, 65535),), lambda v: b"\x17\x10" + struct.pack("<H", v[0])),
+    # 41은 17과 반대인 위치 비교다. STORY0/1의 튜토리얼 안내가 이 형식을 쓴다.
+    "도시 불일치": ((("도시 ID", 0, 65535),), lambda v: b"\x41\x08" + struct.pack("<H", v[0])),
+    "건물 불일치": ((("건물 ID", 0, 65535),), lambda v: b"\x41\x10" + struct.pack("<H", v[0])),
+    # STORY의 시설 기본 동작 직전에만 전달되는 호출 문맥(유형 4)을 비교한다.
+    # 21은 두 번째 피연산자 표식이고, 뒤 u16이 실제 동작값이다.
+    "시설 동작 전 조건": (
+        (("시설 ID", 0, 65535), ("동작값", 0, 65535)),
+        lambda v: b"\x42\x10" + struct.pack("<H", v[0]) + b"\x21" + struct.pack("<H", v[1]),
+    ),
+    # STORY의 기능 메뉴가 하위 커맨드 목록을 열 때 전달되는 호출 문맥(유형 5)이다.
+    # 피연산자는 없으며, 조건 끝 표식 FF 앞에 65만 기록한다.
+    "기능 메뉴 진입": ((), lambda values: b"\x65"),
     "문화권": ((("문화권 ID", 0, 65535),), lambda v: b"\x17\x19" + struct.pack("<H", v[0])),
     "아이템 소지": ((("아이템 ID", 0, 65535),), lambda v: b"\x0F\x05" + struct.pack("<H", v[0])),
     "아이템 비소지": ((("아이템 ID", 0, 65535),), lambda v: b"\x12\x05" + struct.pack("<H", v[0])),
@@ -257,13 +305,16 @@ CONDITION_KINDS = {
     "또는 (OR)": ((), lambda values: b"\x50"),
 }
 
-# DISEV/HIST_EV는 같은 EXE 조건 인터프리터를 사용한다. 호출 문맥 종류가
-# 필요한 41/42/65 계열은 제외하고, 전역 상태만 읽는 아래 조건은 두 파일에서
-# 모두 선택할 수 있다. 다만 자주 쓰는 흐름이 서로 다르므로 파일별로 분류와
-# 표시 순서를 따로 둔다.
+# DISEV/HIST_EV/퀘스트는 같은 조건 인터프리터를 사용한다. 전역 상태를 읽는
+# 조건은 세 유형에서 모두 선택할 수 있다. 41은 STORY에서만 확인된 반대 위치
+# 조건이다. 42와 65는 각각 STORY의 시설 동작 전/기능 메뉴 진입 호출 문맥에서만
+# 유효하다.
 CONDITION_KIND_UI_LABELS = {
     "항상 실행": "항상 실행",
     "국가": "국가", "도시": "도시", "건물": "건물", "문화권": "문화권",
+    "도시 불일치": "도시 불일치", "건물 불일치": "건물 불일치",
+    "시설 동작 전 조건": "시설 동작 전 조건",
+    "기능 메뉴 진입": "기능 메뉴 진입",
     "아이템 소지": "아이템 소지", "아이템 비소지": "아이템 미소지",
     "힌트 상태 활성": "힌트 활성", "힌트 상태 미활성": "힌트 미활성",
     "인물 조건": "인물 미조우", "후원자 조건": "후원자 활성",
@@ -288,9 +339,10 @@ CONDITION_KIND_UI_LABELS = {
     "또는 (OR)": "또는 (OR)",
 }
 
-DISCOVERY_CONDITION_LAYOUT = (
+CONDITION_LAYOUT = (
     ("실행·논리", ("항상 실행", "또는 (OR)")),
-    ("발생 위치", ("국가", "도시", "건물", "문화권")),
+    ("발생 위치", ("국가", "도시", "건물", "도시 불일치", "건물 불일치", "문화권")),
+    ("호출 문맥", ("시설 동작 전 조건", "기능 메뉴 진입")),
     ("소지품·힌트", ("아이템 소지", "아이템 비소지", "힌트 상태 활성", "힌트 상태 미활성")),
     ("인물·후원자", ("인물 조건", "후원자 조건", "후원자 계약 없음")),
     ("발견 진행", ("발견 기록 있음", "발견 기록 없음", "보고 완료", "발견 후 경과 년수 (패치 필요)")),
@@ -303,46 +355,44 @@ DISCOVERY_CONDITION_LAYOUT = (
     ("이동·함대", ("함대 선박 보유", "해상 이동 중", "육상 이동 중", "함대 선박 보유 (육상 이동 아님)")),
 )
 
-HISTORY_CONDITION_LAYOUT = (
-    ("실행·논리", ("항상 실행", "또는 (OR)")),
-    ("발생 시점", ("특정 연·월 일치", "특정 연·월", "기준 연도 이후", "기준 연도 일치", "현재 월 일치", "연도 범위")),
-    ("발견 진행", ("발견 기록 있음", "발견 기록 없음", "보고 완료", "발견 후 경과 년수 (패치 필요)")),
-    ("도시 상태", (
-        "도시 등장·활성", "도시 미등장·비활성", "도시 국적 일치", "도시 국적 불일치",
-        "현재 도시 시설 보유", "지정 도시 시설 보유", "지정 도시 시설 미보유",
-    )),
-    ("발생 위치", ("국가", "도시", "건물", "문화권")),
-    ("소지품·힌트", ("아이템 소지", "아이템 비소지", "힌트 상태 활성", "힌트 상태 미활성")),
-    ("인물·후원자", ("인물 조건", "후원자 조건", "후원자 계약 없음")),
-    ("수치·확률", ("상태값 초과", "상태값 이상", "상태값 미만", "상태값 이하", "무작위 확률")),
-    ("이동·함대", ("함대 선박 보유", "해상 이동 중", "육상 이동 중", "함대 선박 보유 (육상 이동 아님)")),
+
+CONDITION_FILE_TYPES, CONDITION_KINDS_BY_FILE_TYPE = _collect_file_type_support(
+    set(CONDITION_KINDS),
+    {
+        EVENT_FILE_DISCOVERY: set(CONDITION_KINDS) - {"도시 불일치", "건물 불일치", "시설 동작 전 조건", "기능 메뉴 진입"},
+        EVENT_FILE_HISTORY: set(CONDITION_KINDS) - {"도시 불일치", "건물 불일치", "시설 동작 전 조건", "기능 메뉴 진입"},
+        EVENT_FILE_EXTERNAL_QUEST: set(CONDITION_KINDS) - {"도시 불일치", "건물 불일치", "시설 동작 전 조건", "기능 메뉴 진입"},
+        EVENT_FILE_STORY: set(CONDITION_KINDS),
+    },
 )
 
 
-def _build_condition_ui_maps(layout):
+def _build_condition_ui_maps(layout, allowed_kinds: frozenset[str]):
     groups: dict[str, tuple[str, ...]] = {}
     group_to_kind: dict[tuple[str, str], str] = {}
     for group, kinds in layout:
+        kinds = tuple(kind for kind in kinds if kind in allowed_kinds)
+        if not kinds:
+            continue
         labels = tuple(CONDITION_KIND_UI_LABELS[kind] for kind in kinds)
         groups[group] = labels
         for label, kind in zip(labels, kinds):
             group_to_kind[(group, label)] = kind
     kind_to_group = {kind: path for path, kind in group_to_kind.items()}
-    if set(kind_to_group) != set(CONDITION_KINDS):
+    if set(kind_to_group) != set(allowed_kinds):
         raise RuntimeError(
             "조건 UI 분류 표 불일치: "
-            f"누락={sorted(set(CONDITION_KINDS) - set(kind_to_group))}, "
-            f"미사용={sorted(set(kind_to_group) - set(CONDITION_KINDS))}"
+            f"누락={sorted(set(allowed_kinds) - set(kind_to_group))}, "
+            f"미사용={sorted(set(kind_to_group) - set(allowed_kinds))}"
         )
     return groups, group_to_kind, kind_to_group
 
 
-CONDITION_GROUPS, CONDITION_GROUP_TO_KIND, CONDITION_KIND_TO_GROUP = _build_condition_ui_maps(
-    DISCOVERY_CONDITION_LAYOUT
-)
-HISTORY_CONDITION_GROUPS, HISTORY_CONDITION_GROUP_TO_KIND, HISTORY_CONDITION_KIND_TO_GROUP = _build_condition_ui_maps(
-    HISTORY_CONDITION_LAYOUT
-)
+CONDITION_UI_BY_FILE_TYPE = {
+    file_type: _build_condition_ui_maps(CONDITION_LAYOUT, CONDITION_KINDS_BY_FILE_TYPE[file_type])
+    for file_type in EVENT_FILE_TYPES
+}
+CONDITION_GROUPS, CONDITION_GROUP_TO_KIND, CONDITION_KIND_TO_GROUP = CONDITION_UI_BY_FILE_TYPE[EVENT_FILE_DISCOVERY]
 
 HINT_REGISTER_COMMAND_KIND = "힌트 등장·등록"
 HINT_TARGET_COMMAND_KINDS = ("힌트 획득", HINT_REGISTER_COMMAND_KIND)
@@ -353,14 +403,26 @@ NATION_CREATION_COMMAND_KIND = "국가 생성"
 NATION_STATE_COMMAND_KINDS = (NATION_CREATION_COMMAND_KIND, "국가 멸망 처리")
 CITY_FACILITY_ADD_COMMAND_KIND = "도시 시설 추가"
 CITY_FACILITY_COMMAND_KINDS = (CITY_FACILITY_ADD_COMMAND_KIND, "도시 시설 제거")
+TRADE_GOOD_SALE_COMMAND_KIND = "교역품 전량 매각"
+TRADE_GOOD_QUANTITY_BRANCH_KIND = "교역품 수량 조건 이동"
+SPONSOR_AFFINITY_COMMAND_KIND = "후원자 친밀도 증감"
+SPONSOR_AVAILABILITY_CLEAR_COMMAND_KIND = "후원자 사용 가능 해제"
+SPONSOR_TARGET_COMMAND_KINDS = (
+    SPONSOR_AFFINITY_COMMAND_KIND, SPONSOR_AVAILABILITY_CLEAR_COMMAND_KIND,
+)
+EXTERNAL_QUEST_ONLY_BODY_KINDS = (
+    *EXTERNAL_QUEST_RETURN_COMMAND_KINDS,
+    SPONSOR_AFFINITY_COMMAND_KIND,
+    SPONSOR_AVAILABILITY_CLEAR_COMMAND_KIND,
+)
 
 BODY_COMMAND_KINDS = (
     "대사", "예/아니오 대사", "다중 선택지 대사", "도시 소문 등록", "문화권 소문 등록", "AVI 재생", "발견물 등록/발견 처리", "아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리",
     "음원 재생", "음원 정지", "DSTILL 이미지 표시", "EVSTILL 이미지 표시", "CG 애니메이션 재생", "특수 조우 연출 설정", "특수 수치 판정", "해상 전투", "일기토 실행", "육상전 실행", "일기토 연출 세트 설정", "이벤트 조건 판정", "이벤트 내부 참조", "델포이 신탁 출력", "이벤트 판정", "힌트 획득", HINT_REGISTER_COMMAND_KIND, "대기", "날짜 경과", "발견물 이름 입력 대기", "발견물 이름 강제 입력",
     "도시 발견·개방", "신도시 생성",
-    "이미지 표시 종료", "대화창 숨김", "대화창 표시", "결과 거짓 설정", "게임 오버", "결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "부관 고용 조건 이동", "선택지 결과 시 이동", "힌트 상태 조건 이동", "발견물 상태 조건 이동", "발견물 등록 판정 이동", "아이템 소지 조건 이동", "아이템 미소지 조건 이동", "기준 연도 조건 이동", "연도 상한 조건 이동", "연도 범위 조건 이동", "도시 조건 이동", "NPC 조건 이동", "상태값 초과 조건 이동", "상태값 초과 조건 이동 (고정 기준)", "상태값 미만 조건 이동", "상태값 이하 조건 이동", "상태값 미만 조건 이동 (무작위 기준)", "상태값 이하 조건 이동 (무작위 기준)", "능력치 비교 분기", "능력치 비교3 분기", "상태값 참조 비교 조건 이동", "상태값 특수 비교 조건 이동", "소지금 비교 분기", "도시 국적 일치 조건 이동", "STORY0.CDS 외 분기", "STORY1.CDS 외 분기",
-    "소지금 증가", "소지금 감소", "교역품 활성화",
-    "상태값 증감", "상태값 설정", "상태값 참조 증가", *NATION_STATE_COMMAND_KINDS, "특수 상태 처리", "인물 상태 처리 1", "인물 상태 처리 2", "도시 국적 변경", "도시 소속 국가 설정", "도시 상태 설정", *CITY_SIZE_COMMAND_KINDS, "도시 점령지 설정", "도시 점령지 해제", "도시 제거", *CITY_FACILITY_COMMAND_KINDS, "이벤트 대상 도시 이동", "이벤트 결과 코드",
+    "이미지 표시 종료", "대화창 숨김", "대화창 표시", "결과 거짓 설정", "게임 오버", "결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "부관 고용 조건 이동", "선택지 결과 시 이동", "힌트 상태 조건 이동", "발견물 상태 조건 이동", "발견물 등록 판정 이동", "아이템 소지 조건 이동", "아이템 미소지 조건 이동", "기준 연도 조건 이동", "연도 상한 조건 이동", "연도 범위 조건 이동", "도시 조건 이동", "NPC 조건 이동", "상태값 초과 조건 이동", "상태값 초과 조건 이동 (고정 기준)", "상태값 미만 조건 이동", "상태값 이하 조건 이동", "상태값 미만 조건 이동 (무작위 기준)", "상태값 이하 조건 이동 (무작위 기준)", "능력치 비교 분기", "능력치 비교3 분기", "상태값 참조 비교 조건 이동", "상태값 특수 비교 조건 이동", "소지금 비교 분기", "도시 국적 일치 조건 이동", TRADE_GOOD_QUANTITY_BRANCH_KIND, "STORY0.CDS 외 분기", "STORY1.CDS 외 분기",
+    "소지금 증가", "소지금 감소", "교역품 활성화", TRADE_GOOD_SALE_COMMAND_KIND,
+    "상태값 증감", "상태값 설정", "상태값 참조 증가", SPONSOR_AFFINITY_COMMAND_KIND, SPONSOR_AVAILABILITY_CLEAR_COMMAND_KIND, *NATION_STATE_COMMAND_KINDS, "특수 상태 처리", "인물 상태 처리 1", "인물 상태 처리 2", "부관 고용·교체", "도시 국적 변경", "도시 소속 국가 설정", "도시 상태 설정", *CITY_SIZE_COMMAND_KINDS, "도시 점령지 설정", "도시 점령지 해제", "도시 제거", *CITY_FACILITY_COMMAND_KINDS, "이벤트 대상 도시 이동", "이벤트 결과 코드", *EXTERNAL_QUEST_RETURN_COMMAND_KINDS,
 )
 MEDIA_PREVIEW_KINDS = (
     "DSTILL 이미지 표시", "EVSTILL 이미지 표시", "CG 애니메이션 재생", "AVI 재생",
@@ -416,7 +478,7 @@ DISCOVERY_NAME_FORCE_KIND = "발견물 이름 강제 입력"
 DISCOVERY_NAME_COMMAND_KINDS = (DISCOVERY_NAME_WAIT_KIND, DISCOVERY_NAME_FORCE_KIND)
 TEXT_VALUE_COMMAND_KINDS = DIALOGUE_KINDS + RUMOR_STRING_COMMAND_KINDS + DISCOVERY_NAME_COMMAND_KINDS
 CHARACTER_TARGET_COMMAND_KINDS = (
-    "인물 상태 처리 1", "인물 상태 처리 2",
+    "인물 상태 처리 1", "인물 상태 처리 2", "부관 고용·교체",
 )
 NAVAL_BATTLE_TARGET_ID_MIN = 262
 NAVAL_BATTLE_TARGET_ID_MAX = 274
@@ -534,7 +596,7 @@ CONDITIONAL_BRANCH_KINDS = (
     ITEM_ABSENCE_BRANCH_KIND, YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND,
     YEAR_RANGE_BRANCH_KIND, CITY_BRANCH_KIND, NPC_BRANCH_KIND,
     STATE_REFERENCE_COMPARE_BRANCH_KIND, STATE_SCALAR_COMPARE_BRANCH_KIND,
-    RUNTIME_REFERENCE_BRANCH_KIND, "소지금 비교 분기",
+    RUNTIME_REFERENCE_BRANCH_KIND, "소지금 비교 분기", TRADE_GOOD_QUANTITY_BRANCH_KIND,
     "STORY0.CDS 외 분기", "STORY1.CDS 외 분기",
 ) + NUMERIC_COMPARE_BRANCH_KINDS
 
@@ -571,14 +633,18 @@ BODY_PATH_TO_KIND: dict[tuple[str, str, str], str] = {
     ("진행·등록", "도시", "발견·개방"): CITY_DISCOVERY_COMMAND_KIND,
     ("진행·등록", "도시", "신도시 생성"): "신도시 생성",
     ("진행·등록", "교역품", "활성화"): "교역품 활성화",
+    ("진행·등록", "교역품", "전량 매각"): TRADE_GOOD_SALE_COMMAND_KIND,
 
     ("상태 변경", "상태값", "증감"): "상태값 증감",
     ("상태 변경", "상태값", "설정"): "상태값 설정",
     ("상태 변경", "상태값", "증가 (성격 계산값)"): "상태값 참조 증가",
+    ("상태 변경", "후원자", "친밀도 증감"): SPONSOR_AFFINITY_COMMAND_KIND,
+    ("상태 변경", "후원자", "사용 가능 해제"): SPONSOR_AVAILABILITY_CLEAR_COMMAND_KIND,
     ("상태 변경", "소지금", "증가"): "소지금 증가",
     ("상태 변경", "소지금", "감소"): "소지금 감소",
     ("상태 변경", "인물", "조우 처리"): "인물 상태 처리 1",
     ("상태 변경", "인물", "통역 고용·교체"): "인물 상태 처리 2",
+    ("상태 변경", "부관", "고용·교체"): "부관 고용·교체",
     ("상태 변경", "도시", "국적 변경"): "도시 국적 변경",
     ("상태 변경", "도시", "소속 국가 설정"): CITY_NATION_SET_COMMAND_KIND,
     ("상태 변경", "도시", "상태 설정"): CITY_STATUS_SET_COMMAND_KIND,
@@ -624,6 +690,7 @@ BODY_PATH_TO_KIND: dict[tuple[str, str, str], str] = {
     ("흐름 제어", "연도", "범위 밖이면 이동"): YEAR_RANGE_BRANCH_KIND,
     ("흐름 제어", "도시", "현재 도시와 다르면 이동"): CITY_BRANCH_KIND,
     ("흐름 제어", "도시 국적", "국가·세력과 일치하면 이동"): RUNTIME_REFERENCE_BRANCH_KIND,
+    ("흐름 제어", "교역품", "보유 수량 이상이면 이동"): TRADE_GOOD_QUANTITY_BRANCH_KIND,
     ("흐름 제어", "NPC", "인물이 이미 조우된 상태면 이동"): NPC_BRANCH_KIND,
     ("흐름 제어", "NPC", "후원자가 비활성이면 이동"): NPC_BRANCH_KIND,
     ("흐름 제어", "상태값", "무작위 기준값 미만이면 이동"): STATE_GREATER_RANDOM_BRANCH_KIND,
@@ -642,6 +709,13 @@ BODY_PATH_TO_KIND: dict[tuple[str, str, str], str] = {
     ("흐름 제어", "강제 이동", "지정 행으로 이동"): "이벤트 내부 참조",
     ("흐름 제어", "결과", "거짓 설정"): "결과 거짓 설정",
     ("흐름 제어", "종료", "게임 오버"): "게임 오버",
+
+    # 외부 퀘스트 전용 반환 레코드도 일반 명령과 같은 3단계 UI 경로를
+    # 가져야 한다. BODY_KIND_TO_PATH에만 넣으면 목록 행은 표시돼도 편집기
+    # 선택 목록(BODY_UI_BY_FILE_TYPE)에는 포함되지 않아 기능 콤보가 빈다.
+    ("퀘스트", "반환", "잔여 단계 설정·종료"): ECQ_RETURN_COMMAND_KIND,
+    ("퀘스트", "반환", "기본 반환 상태 설정"): ECQ_DEFAULT_RETURN_KIND,
+    ("퀘스트", "흐름", "처리 중단"): ECQ_ABORT_COMMAND_KIND,
 }
 
 BODY_COMMAND_GROUPS = {}
@@ -661,6 +735,9 @@ BODY_KIND_TO_PATH.update({
     "이벤트 판정": ("전투·미니게임", "미니게임", "성배 퍼즐"),
     "특수 수치 판정": ("전투·미니게임", "미니게임", "코인 게임 (천칭 퍼즐)"),
     "이벤트 조건 판정": ("판정", "주인공 능력치", "운 판정"),
+    ECQ_RETURN_COMMAND_KIND: ("퀘스트", "반환", "잔여 단계 설정·종료"),
+    ECQ_DEFAULT_RETURN_KIND: ("퀘스트", "반환", "기본 반환 상태 설정"),
+    ECQ_ABORT_COMMAND_KIND: ("퀘스트", "흐름", "처리 중단"),
 })
 
 # 양쪽 원본 이벤트 파일에서 실제 사용됐고 동일한 EXE 처리 경로와
@@ -694,7 +771,12 @@ HISTORY_VERIFIED_SHARED_BODY_KINDS = {
 
 # 발견물 이벤트에서는 기존 DISEV 명령과 양쪽 원본 공통 명령만 제공한다.
 # 역사 이벤트 전용으로 분석한 세계 상태 명령은 해당 파일에서만 노출한다.
-DISCOVERY_BODY_KINDS = set(BODY_COMMAND_KINDS) - HISTORY_EVENT_BODY_KINDS
+DISCOVERY_BODY_KINDS = (
+    set(BODY_COMMAND_KINDS)
+    - HISTORY_EVENT_BODY_KINDS
+    - set(EXTERNAL_QUEST_ONLY_BODY_KINDS)
+    - {"부관 고용·교체"}
+)
 
 # HIST_EV에서 원본 바이트와 재인코딩이 모두 확인됐거나, 공통 처리기로
 # 별도 검증한 명령만 편집 목록에 둔다. 나머지 행은 원본 보존 상태로 유지한다.
@@ -703,6 +785,41 @@ HISTORY_BODY_KINDS = {
     *HISTORY_EVENT_BODY_KINDS,
     *HISTORY_VERIFIED_SHARED_BODY_KINDS,
 }
+
+# 외부 퀘스트는 발견물/역사 이벤트와 같은 인터프리터를 쓰지만, 의뢰 진행용 반환
+# 코드(58/06)와 일부 예약 바이트를 추가로 쓴다. 반환 코드는 의미 체계가
+# 완전히 규명되지 않았으므로 새 명령으로 만들지 않고 원본 보존 전용으로 둔다.
+# 아래는 ECQ·EDG 원본과 재인코딩을 대조한 일반 명령만 편집 목록에 노출한다.
+EXTERNAL_QUEST_BODY_KINDS = {
+    "대사", "예/아니오 대사", "다중 선택지 대사",
+    "문화권 소문 등록", "아이템 획득", "아이템 상실", "이벤트 아이템 처리",
+    "소지금 증가", "소지금 감소", "상태값 증감", "상태값 설정", SPONSOR_AFFINITY_COMMAND_KIND, SPONSOR_AVAILABILITY_CLEAR_COMMAND_KIND,
+    "이벤트 결과 코드", "해상 전투", "일기토 실행", "육상전 실행",
+    "일기토 연출 세트 설정", "이벤트 내부 참조", "능력치 비교 분기",
+    "상태값 특수 비교 조건 이동", "결과 거짓 시 이동", "결과 참 시 이동",
+    "대기", "게임 오버", CHOICE_BRANCH_KIND, ITEM_POSSESSION_BRANCH_KIND, TRADE_GOOD_SALE_COMMAND_KIND,
+    TRADE_GOOD_QUANTITY_BRANCH_KIND, *EXTERNAL_QUEST_RETURN_COMMAND_KINDS,
+}
+
+# STORY0/1은 퀘스트 반환 형식과 공통 명령을 함께 쓰며, 대화창 표시·숨김,
+# 음원, 인물 조우 처리, 부관 고용·교체와 힌트/발견물 조건 분기를 추가로 쓴다.
+# STORY 전용 호출 문맥 조건(42/65)도 형식과 판정 근거가 확인되어 편집한다.
+STORY_BODY_KINDS = {
+    *EXTERNAL_QUEST_BODY_KINDS,
+    ABILITY_COMPARE3_BRANCH_KIND,
+    "대화창 숨김", "대화창 표시", "음원 재생", "인물 상태 처리 1", "부관 고용·교체",
+    "이전 조건 참 시 이동", HINT_BRANCH_KIND, DISCOVERY_BRANCH_KIND,
+}
+
+BODY_COMMAND_FILE_TYPES, BODY_COMMAND_KINDS_BY_FILE_TYPE = _collect_file_type_support(
+    set(BODY_COMMAND_KINDS),
+    {
+        EVENT_FILE_DISCOVERY: DISCOVERY_BODY_KINDS,
+        EVENT_FILE_HISTORY: HISTORY_BODY_KINDS,
+        EVENT_FILE_EXTERNAL_QUEST: EXTERNAL_QUEST_BODY_KINDS,
+        EVENT_FILE_STORY: STORY_BODY_KINDS,
+    },
+)
 
 
 def _build_body_ui_maps(kinds: set[str], group_order: tuple[str, ...]):
@@ -723,14 +840,13 @@ def _build_body_ui_maps(kinds: set[str], group_order: tuple[str, ...]):
     return path_to_kind, groups, details, {kind: path for path, kind in path_to_kind.items()}
 
 
-DISCOVERY_BODY_PATH_TO_KIND, DISCOVERY_BODY_COMMAND_GROUPS, DISCOVERY_BODY_COMMAND_DETAILS, DISCOVERY_BODY_KIND_TO_PATH = _build_body_ui_maps(
-    DISCOVERY_BODY_KINDS,
-    ("표시·연출", "진행·등록", "상태 변경", "판정", "전투·미니게임", "시간", "흐름 제어"),
-)
-HISTORY_BODY_PATH_TO_KIND, HISTORY_BODY_COMMAND_GROUPS, HISTORY_BODY_COMMAND_DETAILS, HISTORY_BODY_KIND_TO_PATH = _build_body_ui_maps(
-    HISTORY_BODY_KINDS,
-    ("진행·등록", "상태 변경", "표시·연출", "흐름 제어", "판정", "전투·미니게임", "시간"),
-)
+BODY_UI_BY_FILE_TYPE = {
+    file_type: _build_body_ui_maps(
+        set(BODY_COMMAND_KINDS_BY_FILE_TYPE[file_type]),
+        ("표시·연출", "진행·등록", "상태 변경", "판정", "전투·미니게임", "시간", "흐름 제어", "퀘스트"),
+    )
+    for file_type in EVENT_FILE_TYPES
+}
 
 
 def branch_target_label(kind: str) -> str:
@@ -740,6 +856,7 @@ def branch_target_label(kind: str) -> str:
         "결과 거짓 시 이동": "결과가 거짓일 때 이동할 행:",
         "결과 참 시 이동": "결과가 참일 때 이동할 행:",
         "이전 조건 참 시 이동": "이전 조건이 참일 때 이동할 행:",
+        TRADE_GOOD_QUANTITY_BRANCH_KIND: "보유 수량이 기준 이상일 때 이동할 행:",
         RUNTIME_REFERENCE_BRANCH_KIND: "도시 국적이 일치할 때 이동할 행:",
         "STORY0.CDS 외 분기": "현재 파일이 STORY0.CDS가 아닐 때 이동할 행:",
         "STORY1.CDS 외 분기": "현재 파일이 STORY1.CDS가 아닐 때 이동할 행:",
@@ -763,9 +880,9 @@ def branch_target_label(kind: str) -> str:
 
 
 EVENT_RESULT_CODES = (
-    (0, "완료 처리"),
-    (1, "실패 처리"),
-    (2, "미처리"),
+    (0, "종료 후 후속 처리"),
+    (1, "종료"),
+    (2, "미종료"),
 )
 EVENT_RESULT_NAMES = dict(EVENT_RESULT_CODES)
 
@@ -777,6 +894,10 @@ CONDITION_KIND_GUIDE_DESCRIPTIONS = {
     "국가": "현재 위치가 선택한 국가에 속할 때 실행합니다.",
     "도시": "현재 위치의 도시가 선택한 도시와 같을 때 실행합니다.",
     "건물": "현재 위치의 건물이 선택한 건물과 같을 때 실행합니다.",
+    "도시 불일치": "현재 위치의 도시가 선택한 도시와 다를 때 실행합니다. STORY의 안내 슬롯에서 확인된 반대 위치 조건입니다.",
+    "건물 불일치": "현재 위치의 건물이 선택한 건물과 다를 때 실행합니다. STORY의 안내 슬롯에서 확인된 반대 위치 조건입니다.",
+    "시설 동작 전 조건": "STORY에서 선택한 시설의 입력한 동작값을 실행하기 직전에만 실행합니다. 일반 위치 조건이 아니므로 STORY 파일에서만 사용하세요.",
+    "기능 메뉴 진입": "상위 메뉴에서 기능을 선택해 하위 커맨드 목록에 들어갈 때 실행합니다. 값이 없는 STORY 호출 문맥 조건입니다.",
     "문화권": "현재 위치가 선택한 문화권에 속할 때 실행합니다.",
     "아이템 소지": "선택한 아이템이 현재 소지품 목록에 있을 때 실행합니다.",
     "아이템 비소지": "선택한 아이템이 현재 소지품 목록에 없을 때 실행합니다.",
@@ -822,8 +943,8 @@ if _missing_condition_guide_kinds or _extra_condition_guide_kinds:
         f"미사용={sorted(_extra_condition_guide_kinds)}"
     )
 
-# 원본 사용 여부는 "해당 파일에서 실행 가능" 여부와 다르다. 조건 설명에는
-# 파일별 분류와 함께 원본 사용 여부를 명시해 두 개념을 혼동하지 않게 한다.
+# 원본 사용 여부는 "해당 파일에서 선택 가능" 여부와 다르다. UI 필터는
+# CONDITION_FILE_TYPES의 사용 가능 범위를 쓰고, 아래 표는 분석 근거만 기록한다.
 DISCOVERY_ORIGINAL_CONDITION_KINDS = {
     "항상 실행", "힌트 상태 활성", "인물 조건", "무작위 확률", "또는 (OR)",
 }
@@ -832,31 +953,53 @@ HISTORY_ORIGINAL_CONDITION_KINDS = {
     "발견 후 경과 년수 (패치 필요)", "도시 등장·활성", "도시 미등장·비활성",
     "도시 국적 일치", "도시 국적 불일치",
 }
+EXTERNAL_QUEST_ORIGINAL_CONDITION_KINDS = {
+    "항상 실행", "국가", "도시", "건물", "문화권", "후원자 계약 없음",
+    "기준 연도 이후", "상태값 이상", "함대 선박 보유", "해상 이동 중",
+    "육상 이동 중", "도시 국적 일치", "또는 (OR)",
+}
+STORY_ORIGINAL_CONDITION_KINDS = {
+    "항상 실행", "도시", "건물", "도시 불일치", "건물 불일치", "시설 동작 전 조건", "기능 메뉴 진입", "문화권",
+    "발견 기록 있음", "발견 기록 없음", "힌트 상태 활성", "힌트 상태 미활성",
+    "기준 연도 이후", "상태값 이상", "후원자 계약 없음", "함대 선박 보유",
+    "해상 이동 중", "도시 국적 일치", "또는 (OR)",
+}
+
+CONDITION_ORIGINAL_FILE_TYPES, _ = _collect_file_type_support(
+    set(CONDITION_KINDS),
+    {
+        EVENT_FILE_DISCOVERY: DISCOVERY_ORIGINAL_CONDITION_KINDS,
+        EVENT_FILE_HISTORY: HISTORY_ORIGINAL_CONDITION_KINDS,
+        EVENT_FILE_EXTERNAL_QUEST: EXTERNAL_QUEST_ORIGINAL_CONDITION_KINDS,
+        EVENT_FILE_STORY: STORY_ORIGINAL_CONDITION_KINDS,
+    },
+    allow_missing=True,
+)
 
 
-def _condition_guide_description(kind: str, event_file_type: str) -> str:
+def _file_type_labels(file_types: frozenset[str]) -> str:
+    labels = [EVENT_FILE_TYPE_LABELS[file_type] for file_type in EVENT_FILE_TYPES if file_type in file_types]
+    return "·".join(labels) if labels else "원본 미확인"
+
+
+def _condition_guide_description(kind: str) -> str:
     description = CONDITION_KIND_GUIDE_DESCRIPTIONS[kind]
-    if event_file_type == EVENT_FILE_HISTORY:
-        used = kind in HISTORY_ORIGINAL_CONDITION_KINDS
-        filename = "HIST_EV.CDS"
-    else:
-        used = kind in DISCOVERY_ORIGINAL_CONDITION_KINDS
-        filename = "DISEV.CDS"
-    if used:
-        return f"{description} 원본 {filename}에서 사용이 확인됐습니다."
-    return f"{description} 공통 EXE 조건 처리기로 사용할 수 있지만 원본 {filename}에는 사용되지 않습니다."
+    observed = _file_type_labels(CONDITION_ORIGINAL_FILE_TYPES[kind])
+    return f"{description} 원본 사용 확인: {observed}."
 
 
-CONDITION_COMMAND_GUIDE = tuple(
-    ("조건", f"발견물 이벤트 | {group} | {subkind}", _condition_guide_description(kind, EVENT_FILE_DISCOVERY))
-    for (group, subkind), kind in CONDITION_GROUP_TO_KIND.items()
-)
-HISTORY_CONDITION_COMMAND_GUIDE = tuple(
-    ("조건", f"역사 이벤트 | {group} | {subkind}", _condition_guide_description(kind, EVENT_FILE_HISTORY))
-    for (group, subkind), kind in HISTORY_CONDITION_GROUP_TO_KIND.items()
-)
+CONDITION_COMMAND_GUIDE_BY_FILE_TYPE = {
+    file_type: tuple(
+        ("조건", " | ".join((group, subkind)), _condition_guide_description(kind))
+        for (group, subkind), kind in CONDITION_UI_BY_FILE_TYPE[file_type][1].items()
+    )
+    for file_type in EVENT_FILE_TYPES
+}
 
 BODY_KIND_GUIDE_DESCRIPTIONS = {
+    ECQ_RETURN_COMMAND_KIND: "입력값에 1을 더한 잔여 단계 수를 퀘스트 런타임 레코드에 기록하고 현재 해석을 끝냅니다. 원본 사용값 0~4는 각각 잔여 단계 1~5에 대응합니다.",
+    ECQ_DEFAULT_RETURN_KIND: "퀘스트 런타임 레코드에 기본 완료 표식과 반환값 1을 기록한 뒤 다음 바이트 해석을 계속합니다.",
+    ECQ_ABORT_COMMAND_KIND: "퀘스트 런타임 상태를 중단(2)으로 기록합니다. 호출부는 이 상태를 감지하면 -1로 반환합니다. 뒤에 결과 상태 1(4D)을 둘 경우 상위 호출부 반환 신호도 함께 기록합니다.",
     "대사": "화자와 대사를 지정해 일반 대화창을 표시한 뒤 다음 행으로 진행합니다. 검사관 화자는 계약·동행 중인 검사관이 없으면 해당 행을 건너뜁니다.",
     "예/아니오 대사": "예·아니오 선택 대사를 표시하고 선택 결과를 저장합니다. 결과는 흐름 제어 | 이전 결과의 참·거짓 분기에서 사용합니다.",
     "다중 선택지 대사": "슬래시(/)로 구분한 선택지를 표시하고 선택값을 저장합니다. 흐름 제어 | 선택지에서 기대값과 비교할 수 있습니다.",
@@ -898,14 +1041,18 @@ BODY_KIND_GUIDE_DESCRIPTIONS = {
     "소지금 증가": "입력한 금액만큼 소지금을 증가시킵니다.",
     "소지금 감소": "입력한 금액만큼 소지금을 감소시킵니다.",
     "교역품 활성화": "지정 교역품을 발견·활성 상태로 바꿔 도시 판매 목록에 나타나게 합니다.",
+    TRADE_GOOD_SALE_COMMAND_KIND: "지정 원산 도시·교역품에 일치하는 화물을 전량 제거하고, 현재 도시 가격과 거래 보정으로 계산한 대금을 소지금에 더합니다.",
     "상태값 증감": "선택한 상태값을 고정값 또는 무작위 범위 값만큼 증가·감소시킵니다.",
     "상태값 설정": "선택한 상태값을 고정값 또는 무작위 범위 값으로 직접 설정합니다.",
     "상태값 참조 증가": "선택한 상태값에 주인공의 소심↔거만 성격 축 계산값(0·1·2)을 더합니다. 종류 코드 19는 상태값 ID가 아니라 계산값 피연산자입니다.",
+    SPONSOR_AFFINITY_COMMAND_KIND: "선택한 후원자 레코드의 친밀도 수치(+0x20)를 지정값만큼 증감합니다. EXE는 결과를 0~100으로 제한합니다.",
+    SPONSOR_AVAILABILITY_CLEAR_COMMAND_KIND: "선택한 후원자 레코드의 사용 가능 비트(15)를 해제합니다. 이후 후원자 조건은 거짓이 됩니다.",
     NATION_CREATION_COMMAND_KIND: "선택한 국가·세력의 런타임 상태를 1로 설정해 게임 세계에 생성·등장시킵니다. 이후 도시 소속을 해당 국가로 이전하는 명령과 함께 사용됩니다.",
     "국가 멸망 처리": "선택한 국가·세력의 런타임 상태를 2(멸망)로 설정합니다. 예: 72 아즈텍 왕국, 77 잉카 제국.",
     "특수 상태 처리": "현재 투입 인원(대원 또는 선원)을 올림하여 절반으로 설정합니다.",
     "인물 상태 처리 1": "선택한 인물 런타임 레코드의 +0xF8을 0으로 만들어 이미 조우했거나 정체를 확인한 상태로 기록합니다. 인물 자체를 비활성화하지는 않습니다.",
     "인물 상태 처리 2": "선택한 인물을 통역으로 고용하거나 기존 통역과 교체합니다.",
+    "부관 고용·교체": "선택한 인물을 부관으로 고용합니다. 기존 부관이 있으면 해고한 뒤 선택한 인물로 교체합니다.",
     "도시 국적 변경": "선택한 도시의 소속 국가를 주인공의 국적으로 변경합니다.",
     CITY_NATION_SET_COMMAND_KIND: "선택한 도시의 소속 국가를 지정 국가·세력으로 설정합니다. 대상 도시가 기존 국가의 수도이면 같은 기존 국가 소속 도시 전체가 함께 이전됩니다.",
     CITY_STATUS_SET_COMMAND_KIND: "선택한 도시의 상태를 통상·전염병·기근·전쟁·축제·대조선 등의 지정 상태로 설정합니다.",
@@ -915,7 +1062,7 @@ BODY_KIND_GUIDE_DESCRIPTIONS = {
     CITY_FACILITY_ADD_COMMAND_KIND: "선택한 도시의 시설 마스크에 지정 시설을 추가합니다.",
     "도시 시설 제거": "선택한 도시의 시설 마스크에서 지정 시설을 제거합니다.",
     "이벤트 대상 도시 이동": "현재 이벤트 실행 대상의 소속 도시와 좌표를 선택한 도시로 옮깁니다.",
-    "이벤트 결과 코드": "완료(0), 실패(1), 미처리(2)를 기록하고 현재 이벤트를 끝냅니다. 미처리만 처리 완료 비트를 남기지 않습니다.",
+    "이벤트 결과 코드": "0은 종료 후 후속 처리를, 1은 종료를, 2는 미종료를 기록합니다. 퀘스트 스케줄러에서는 1일 때만 현재 기본 후속 처리를 건너뛰며, 0·2는 기본 처리로 진행합니다. 2도 명령 실행은 끝내지만 이벤트 완료 상태를 확정하지 않는 값이며, 해석 시작 시의 기본값이기도 합니다.",
 }
 
 BODY_BRANCH_GUIDE_NOTES = {
@@ -932,6 +1079,7 @@ BODY_BRANCH_GUIDE_NOTES = {
     RUNTIME_REFERENCE_BRANCH_KIND: "도시와 국가·세력은 각각 이름 콤보박스에서 선택합니다.",
     NPC_BRANCH_KIND: "인물 조우 상태는 런타임 레코드 +0xF8, 후원자 활성 상태는 별도 활성 비트로 판정합니다.",
     "소지금 비교 분기": "비교 기준 금액은 별도 숫자 입력칸에 입력합니다.",
+    TRADE_GOOD_QUANTITY_BRANCH_KIND: "원산 도시·교역품·최소 보유 수량을 각각 선택합니다. 수량이 기준 이상이면 지정 행으로 이동합니다.",
 }
 
 
@@ -963,41 +1111,21 @@ _missing_body_guide_kinds = set(BODY_COMMAND_KINDS) - set(BODY_KIND_GUIDE_DESCRI
 if _missing_body_guide_kinds:
     raise RuntimeError(f"본문 명령 설명 누락: {sorted(_missing_body_guide_kinds)}")
 
-def _scoped_body_guide_description(path: tuple[str, str, str], kind: str, event_file_type: str) -> str:
-    description = _body_guide_description(path, kind)
-    if kind in COMMON_BODY_KINDS:
-        return f"{description} 양쪽 원본 파일의 사용례와 재인코딩을 확인한 공통 명령입니다."
-    if event_file_type == EVENT_FILE_HISTORY:
-        if kind in HISTORY_EVENT_BODY_KINDS:
-            return f"{description} 역사 이벤트 원본에서 확인한 명령입니다."
-        return f"{description} 원본 HIST_EV.CDS에는 없지만 공통 EXE 처리기와 재인코딩을 확인했습니다."
-    return f"{description} 발견물 이벤트 명령으로 분류됩니다."
+def _scoped_body_guide_description(path: tuple[str, str, str], kind: str) -> str:
+    return _body_guide_description(path, kind)
 
 
-BODY_COMMAND_GUIDE = tuple(
-    (
-        "본문",
-        " | ".join(("공통" if kind in COMMON_BODY_KINDS else "발견물 이벤트", *path)),
-        _scoped_body_guide_description(path, kind, EVENT_FILE_DISCOVERY),
+BODY_COMMAND_GUIDE_BY_FILE_TYPE = {
+    file_type: tuple(
+        ("본문", " | ".join(path), _scoped_body_guide_description(path, kind))
+        for path, kind in BODY_UI_BY_FILE_TYPE[file_type][0].items()
     )
-    for path, kind in DISCOVERY_BODY_PATH_TO_KIND.items()
-)
-HISTORY_BODY_COMMAND_GUIDE = tuple(
-    (
-        "본문",
-        " | ".join((
-            "공통" if kind in COMMON_BODY_KINDS else
-            "역사 이벤트" if kind in HISTORY_EVENT_BODY_KINDS else
-            "공통 처리기",
-            *path,
-        )),
-        _scoped_body_guide_description(path, kind, EVENT_FILE_HISTORY),
-    )
-    for path, kind in HISTORY_BODY_PATH_TO_KIND.items()
-)
-HISTORY_COMMAND_GUIDE = HISTORY_CONDITION_COMMAND_GUIDE + HISTORY_BODY_COMMAND_GUIDE
-
-COMMAND_GUIDE = CONDITION_COMMAND_GUIDE + BODY_COMMAND_GUIDE
+    for file_type in EVENT_FILE_TYPES
+}
+COMMAND_GUIDE_BY_FILE_TYPE = {
+    file_type: CONDITION_COMMAND_GUIDE_BY_FILE_TYPE[file_type] + BODY_COMMAND_GUIDE_BY_FILE_TYPE[file_type]
+    for file_type in EVENT_FILE_TYPES
+}
 HIDDEN_COMMAND_GUIDES = frozenset()
 
 # 19/1A/22/26 1C 명령의 대상 번호.  "능력치"라는 옛 표기는 함대 상태,
@@ -1488,18 +1616,13 @@ class EventEditor:
         default_theme = self.theme_names[0] if self.theme_names else "clam"
         self.theme_var = tk.StringVar(
             value=(
-                _load_saved_theme("event_editor_theme", self.theme_names)
+                _load_saved_theme("cds_event_editor_theme", self.theme_names)
+                or _load_saved_theme("event_editor_theme", self.theme_names)
                 or _load_saved_theme("disev_editor_theme", self.theme_names)
                 or default_theme
             )
         )
-        self.dialogue_speakers = {
-            "화자 없음": b"",
-            **{
-                name: tag + b"\x81\x46"
-                for tag, name in disev.SPEAKER_NAMES.items()
-            },
-        }
+        self.dialogue_speakers = self._base_dialogue_speakers()
 
         self._configure_styles()
         self._build_ui()
@@ -1723,7 +1846,7 @@ class EventEditor:
     def _change_theme(self, _event: tk.Event | None = None) -> None:
         self._configure_styles(self.theme_var.get())
         self.root.after_idle(self._autosize_all_comboboxes)
-        _save_theme("event_editor_theme", self.theme_var.get())
+        _save_theme("cds_event_editor_theme", self.theme_var.get())
 
     @staticmethod
     def _cycle_combobox(event: tk.Event) -> str | None:
@@ -2043,24 +2166,13 @@ class EventEditor:
             self.root.after_idle(self._fit_command_guide_columns)
             return
 
-        if self.event_file_type == EVENT_FILE_HISTORY:
-            # 역사 이벤트 흐름에 맞춘 조건 분류와 HIST_EV에서 안전하게
-            # 편집 가능한 명령만 표시한다.
-            self.guide_filter_combo.configure(
-                values=(ui("all"), ui("condition"), ui("body")), state="readonly",
-            )
-            if selected not in (ui("all"), ui("condition"), ui("body")):
-                selected = ui("all")
-                self.guide_filter_var.set(selected)
-            guide_rows = HISTORY_COMMAND_GUIDE
-        else:
-            self.guide_filter_combo.configure(
-                values=(ui("all"), ui("condition"), ui("body")), state="readonly",
-            )
-            if selected not in (ui("all"), ui("condition"), ui("body")):
-                selected = ui("all")
-                self.guide_filter_var.set(selected)
-            guide_rows = COMMAND_GUIDE
+        self.guide_filter_combo.configure(
+            values=(ui("all"), ui("condition"), ui("body")), state="readonly",
+        )
+        if selected not in (ui("all"), ui("condition"), ui("body")):
+            selected = ui("all")
+            self.guide_filter_var.set(selected)
+        guide_rows = COMMAND_GUIDE_BY_FILE_TYPE[self.event_file_type]
 
         for index, row in enumerate(guide_rows):
             if row[1] in HIDDEN_COMMAND_GUIDES or (selected != ui("all") and row[0] != selected):
@@ -2487,6 +2599,28 @@ class EventEditor:
         else:
             self.body_insert_row_label.pack_forget()
             self.body_insert_row_entry.pack_forget()
+        if action in (ui("add"), ui("insert")):
+            # 반환 코드·미확인 원본 행을 선택한 상태에서도 새 명령의 추가·삽입은
+            # 가능해야 한다. 현재 행을 수정 가능하게 바꾸는 것이 아니라, 열린
+            # 파일 유형에서 허용된 새 명령의 기본 선택으로 전환한다.
+            body_groups, body_details, _paths, _reverse = self._active_body_maps()
+            group = self.body_command_var.get()
+            if group not in body_groups:
+                group = next(iter(body_groups), "")
+                self.body_command_var.set(group)
+                self.body_subkind_var.set("")
+                self.body_detail_var.set("")
+            subkinds = body_groups.get(group, ())
+            if subkinds and self.body_subkind_var.get() not in subkinds:
+                self.body_subkind_var.set(subkinds[0])
+                self.body_detail_var.set("")
+            details = body_details.get((group, self.body_subkind_var.get()), ())
+            if details and self.body_detail_var.get() not in details:
+                self.body_detail_var.set(details[0])
+            self._body_kind_changed()
+            self.body_kind_combo.configure(state="readonly")
+            self.body_subkind_combo.configure(state="readonly" if subkinds else "disabled")
+            self.body_detail_combo.configure(state="readonly" if details else "disabled")
         if action in (ui("edit"), ui("remove")) and self.selected_body_index is not None:
             self.body_insert_row_var.set(str(self.selected_body_index + 1))
 
@@ -2783,24 +2917,19 @@ class EventEditor:
         return self._active_condition_group_to_kind().get((group, self.condition_subkind_var.get()), group)
 
     def _active_condition_groups(self) -> dict[str, tuple[str, ...]]:
-        return HISTORY_CONDITION_GROUPS if self.event_file_type == EVENT_FILE_HISTORY else CONDITION_GROUPS
+        return CONDITION_UI_BY_FILE_TYPE[self.event_file_type or EVENT_FILE_DISCOVERY][0]
 
     def _active_condition_group_to_kind(self) -> dict[tuple[str, str], str]:
-        return HISTORY_CONDITION_GROUP_TO_KIND if self.event_file_type == EVENT_FILE_HISTORY else CONDITION_GROUP_TO_KIND
+        return CONDITION_UI_BY_FILE_TYPE[self.event_file_type or EVENT_FILE_DISCOVERY][1]
 
     def _active_condition_kind_to_group(self) -> dict[str, tuple[str, str]]:
-        return HISTORY_CONDITION_KIND_TO_GROUP if self.event_file_type == EVENT_FILE_HISTORY else CONDITION_KIND_TO_GROUP
+        return CONDITION_UI_BY_FILE_TYPE[self.event_file_type or EVENT_FILE_DISCOVERY][2]
 
     def _active_body_maps(self):
-        if self.event_file_type == EVENT_FILE_HISTORY:
-            return (
-                HISTORY_BODY_COMMAND_GROUPS, HISTORY_BODY_COMMAND_DETAILS,
-                HISTORY_BODY_PATH_TO_KIND, HISTORY_BODY_KIND_TO_PATH,
-            )
-        return (
-            DISCOVERY_BODY_COMMAND_GROUPS, DISCOVERY_BODY_COMMAND_DETAILS,
-            DISCOVERY_BODY_PATH_TO_KIND, DISCOVERY_BODY_KIND_TO_PATH,
-        )
+        path_to_kind, groups, details, kind_to_path = BODY_UI_BY_FILE_TYPE[
+            self.event_file_type or EVENT_FILE_DISCOVERY
+        ]
+        return groups, details, path_to_kind, kind_to_path
 
     def _configure_event_editor_schema(self) -> None:
         """Switch the builder choices to the command set verified for the opened file."""
@@ -2824,6 +2953,9 @@ class EventEditor:
             "국가": self.nation_targets,
             "도시": self.city_targets,
             "건물": self.building_targets,
+            "도시 불일치": self.city_targets,
+            "건물 불일치": self.building_targets,
+            "시설 동작 전 조건": self.building_targets,
             "문화권": self.culture_targets,
             "아이템 소지": self.item_targets,
             "아이템 비소지": self.item_targets,
@@ -2986,6 +3118,7 @@ class EventEditor:
                 0x59: "함대 선박 보유",
                 0x5F: "해상 이동 중",
                 0x60: "육상 이동 중",
+                0x65: "기능 메뉴 진입",
                 0x67: "함대 선박 보유 (육상 이동 아님)",
             }
             if code[offset] in single_byte_conditions:
@@ -3005,6 +3138,18 @@ class EventEditor:
                 if primary == 0x17 and secondary in (0x00, 0x08, 0x10, 0x19):
                     tokens.append(({0x00: "국가", 0x08: "도시", 0x10: "건물", 0x19: "문화권"}[secondary], (value,)))
                     offset += 4
+                    continue
+                if primary == 0x41 and secondary in (0x08, 0x10):
+                    tokens.append(({0x08: "도시 불일치", 0x10: "건물 불일치"}[secondary], (value,)))
+                    offset += 4
+                    continue
+                if (
+                    primary == 0x42 and secondary == 0x10
+                    and offset + 7 <= len(code) and code[offset + 4] == 0x21
+                ):
+                    action_value = struct.unpack_from("<H", code, offset + 5)[0]
+                    tokens.append(("시설 동작 전 조건", (value, action_value)))
+                    offset += 7
                     continue
                 if secondary == 0x05 and primary in (0x12, 0x0F):
                     tokens.append(("아이템 소지" if primary == 0x0F else "아이템 비소지", (value,)))
@@ -3283,6 +3428,8 @@ class EventEditor:
                 "인물이 이미 조우된 상태면 이동" if npc_type == 0x0D else "후원자가 비활성이면 이동"
             )
             self._set_body_npc(int(token["character_id"]), self.sponsor_targets if npc_type == 0x12 else self.character_targets)
+        elif kind in SPONSOR_TARGET_COMMAND_KINDS:
+            self._set_body_npc(int(token["character_id"]), self.sponsor_targets)
         elif kind in (ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND):
             self._set_body_item(int(token["item_id"]))
         elif kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND,) or kind in STAT_REFERENCE_COMMAND_KINDS:
@@ -3304,7 +3451,9 @@ class EventEditor:
         if kind == "소지금 비교 분기":
             self.body_value2_var.set(str(token["compare_value"]))
         editable = bool(token["editable"])
-        active_body_kinds = HISTORY_BODY_KINDS if self.event_file_type == EVENT_FILE_HISTORY else DISCOVERY_BODY_KINDS
+        active_body_kinds = BODY_COMMAND_KINDS_BY_FILE_TYPE[
+            self.event_file_type or EVENT_FILE_DISCOVERY
+        ]
         editable = editable and group in body_groups and kind in active_body_kinds
         self._selected_body_original_kind = kind
         self._body_kind_change_from_selection = True
@@ -3332,6 +3481,8 @@ class EventEditor:
             self._set_body_npc(int(value), self._naval_battle_targets())
         if kind in CHARACTER_TARGET_COMMAND_KINDS:
             self._set_body_npc(int(token["character_id"]))
+        if kind in SPONSOR_TARGET_COMMAND_KINDS:
+            self._set_body_npc(int(token["character_id"]), self.sponsor_targets)
         if kind in CITY_TARGET_COMMAND_KINDS:
             self._set_body_city(int(token["character_id"]))
             if kind in CITY_FACILITY_COMMAND_KINDS:
@@ -3348,6 +3499,13 @@ class EventEditor:
             self._set_body_item(int(value))
         if kind == "교역품 활성화":
             self._set_body_trade_good(int(value))
+        if kind == TRADE_GOOD_SALE_COMMAND_KIND:
+            self._set_body_city(int(token["character_id"]))
+            self._set_body_trade_good(int(value))
+        if kind == TRADE_GOOD_QUANTITY_BRANCH_KIND:
+            self._set_body_city(int(token["character_id"]))
+            self._set_body_trade_good(int(token["trade_good_id"]))
+            self.body_value2_var.set(str(token["compare_value"]))
         if kind in (ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND):
             self._set_body_item(int(token["item_id"]))
         if kind == "신도시 생성":
@@ -3415,7 +3573,7 @@ class EventEditor:
         )
         self.body_speaker_combo.configure(state="readonly" if editable and kind in DIALOGUE_KINDS else "disabled")
         self.body_character_combo.configure(
-            state="readonly" if editable and kind in ("발견물 등록/발견 처리", DISCOVERY_BRANCH_KIND, NPC_BRANCH_KIND) else "disabled"
+            state="readonly" if editable and kind in ("발견물 등록/발견 처리", DISCOVERY_BRANCH_KIND, NPC_BRANCH_KIND, *CHARACTER_TARGET_COMMAND_KINDS, *SPONSOR_TARGET_COMMAND_KINDS) else "disabled"
         )
         self.body_item_combo.configure(state="readonly" if editable and kind in ("아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리") else "disabled")
         self.body_city_combo.configure(state="readonly" if editable and kind in ("신도시 생성", *CITY_SIZE_COMMAND_KINDS) else "disabled")
@@ -3562,6 +3720,7 @@ class EventEditor:
         is_random_range = kind in RANDOM_RANGE_COMMAND_KINDS
         is_item = kind in ("아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리")
         is_city = kind == "신도시 생성"
+        is_character_target = kind in CHARACTER_TARGET_COMMAND_KINDS
         is_event_result = kind == "이벤트 결과 코드"
         self._rebuild_body_command_controls(kind, group, subkinds, detail_kinds)
         self.root.after_idle(self._autosize_all_comboboxes)
@@ -3750,6 +3909,14 @@ class EventEditor:
             self.body_character_combo.configure(state="readonly")
             if not self.body_character_var.get() and self.discovery_targets:
                 self._set_body_character(self.discovery_targets[0][0])
+        elif is_character_target:
+            self.body_value_entry.grid_remove()
+            self.body_character_label.configure(text="인물:")
+            self.body_character_label.grid(row=0, column=2, sticky="e")
+            self.body_character_combo.grid(row=0, column=3, sticky="ew", padx=(5, 0))
+            self.body_character_combo.configure(state="readonly")
+            if not self.body_character_var.get() and self.character_targets:
+                self._set_body_npc(self.character_targets[0][0])
         elif is_event_result:
             self.body_value_entry.grid_remove()
             self.body_result_combo.grid(row=0, column=3, sticky="ew", padx=(5, 0))
@@ -3899,6 +4066,7 @@ class EventEditor:
         no_input = {
             "음원 정지", "이미지 표시 종료", "대화창 숨김", "대화창 표시",
             "결과 거짓 설정", "게임 오버", "델포이 신탁 출력",
+            ECQ_DEFAULT_RETURN_KIND, ECQ_ABORT_COMMAND_KIND,
         }
         if kind in no_input:
             return
@@ -4100,6 +4268,16 @@ class EventEditor:
             if not self.body_character_var.get() and self.character_targets:
                 self._set_body_npc(self.character_targets[0][0])
             return
+        if kind in SPONSOR_TARGET_COMMAND_KINDS:
+            aux_label(0, "후원자:")
+            aux_combo(1, self.body_character_var, tuple(
+                self._body_target_display(sponsor_id, name) for sponsor_id, name in self.sponsor_targets
+            ))
+            if not self.body_character_var.get() and self.sponsor_targets:
+                self._set_body_npc(self.sponsor_targets[0][0], self.sponsor_targets)
+            if kind == SPONSOR_AFFINITY_COMMAND_KIND:
+                final_value("증감값:", self.body_value_var)
+            return
         if kind in CITY_TARGET_COMMAND_KINDS:
             aux_label(0, "도시:")
             aux_combo(1, self.body_city_var, tuple(
@@ -4163,6 +4341,21 @@ class EventEditor:
             aux_combo(1, self.body_item_var, tuple(
                 self._body_target_display(item_id, name) for item_id, name in self.item_targets
             ), maximum=16)
+            return
+        if kind == TRADE_GOOD_SALE_COMMAND_KIND:
+            aux_label(0, "원산 도시:")
+            aux_combo(1, self.body_city_var, tuple(
+                self._body_target_display(city_id, name) for city_id, name in self.city_targets
+            ))
+            aux_label(2, "교역품:")
+            aux_combo(3, self.body_trade_good_var, tuple(
+                self._body_target_display(trade_good_id, name)
+                for trade_good_id, name in self.trade_good_targets
+            ))
+            if not self.body_city_var.get() and self.city_targets:
+                self._set_body_city(self.city_targets[0][0])
+            if not self.body_trade_good_var.get() and self.trade_good_targets:
+                self._set_body_trade_good(self.trade_good_targets[0][0])
             return
         if kind == "교역품 활성화":
             aux_label(0, "교역품:")
@@ -4245,6 +4438,26 @@ class EventEditor:
         if kind == "소지금 비교 분기":
             aux_label(0, "소지금 기준값:")
             aux_entry(1, self.body_value2_var)
+            final_value(branch_target_label(kind), self.body_value_var)
+            return
+        if kind == TRADE_GOOD_QUANTITY_BRANCH_KIND:
+            aux_label(0, "원산 도시:")
+            aux_combo(1, self.body_city_var, tuple(
+                self._body_target_display(city_id, name) for city_id, name in self.city_targets
+            ))
+            aux_label(2, "교역품:")
+            aux_combo(3, self.body_trade_good_var, tuple(
+                self._body_target_display(trade_good_id, name)
+                for trade_good_id, name in self.trade_good_targets
+            ))
+            aux_label(4, "최소 수량:")
+            aux_entry(5, self.body_value2_var)
+            if not self.body_city_var.get() and self.city_targets:
+                self._set_body_city(self.city_targets[0][0])
+            if not self.body_trade_good_var.get() and self.trade_good_targets:
+                self._set_body_trade_good(self.trade_good_targets[0][0])
+            if not self.body_value2_var.get().strip():
+                self.body_value2_var.set("1")
             final_value(branch_target_label(kind), self.body_value_var)
             return
         if kind == RUNTIME_REFERENCE_BRANCH_KIND:
@@ -4464,7 +4677,7 @@ class EventEditor:
             raise ValueError(f"WAVES.CDS 파트 {part_index}가 RIFF WAVE 형식이 아닙니다.")
         if self._audio_preview_directory is None:
             self._audio_preview_directory = tempfile.TemporaryDirectory(
-                prefix="Event_Editor_audio_",
+                prefix="CDS_Event_Editor_audio_",
             )
         source = Path(self._audio_preview_directory.name) / f"WAVES_{part_index:02d}.wav"
         source.write_bytes(wav_data)
@@ -6091,7 +6304,7 @@ class EventEditor:
             return str(self._body_media_id())
         if kind in ("아이템 획득", "아이템 상실", "이벤트 아이템 등록", "이벤트 아이템 처리"):
             return str(self._body_item_id())
-        if kind == "교역품 활성화":
+        if kind in ("교역품 활성화", TRADE_GOOD_SALE_COMMAND_KIND):
             return str(self._body_trade_good_id())
         if kind == "신도시 생성":
             return str(self._body_city_id())
@@ -6198,6 +6411,18 @@ class EventEditor:
         battlefield: str = "현재 위치 지형 (자동)",
         encoded_value: bytes | None = None,
     ) -> dict[str, object]:
+        if kind == ECQ_RETURN_COMMAND_KIND:
+            return_code = int(str(value).strip())
+            if not 0 <= return_code <= 4:
+                raise ValueError("퀘스트 잔여 단계 반환값은 원본 사용 범위인 0~4에서 입력하세요.")
+            return {
+                "kind": kind, "raw": b"\x58" + bytes((return_code,)),
+                "value": return_code, "editable": True,
+            }
+        if kind == ECQ_DEFAULT_RETURN_KIND:
+            return {"kind": kind, "raw": b"\x06", "value": 0, "editable": True}
+        if kind == ECQ_ABORT_COMMAND_KIND:
+            return {"kind": kind, "raw": b"\x04", "value": None, "editable": True}
         if kind in DIALOGUE_KINDS:
             encoded = encoded_value if encoded_value is not None else (
                 encode_multichoice_dialogue_text(value)
@@ -6282,9 +6507,29 @@ class EventEditor:
             raw_prefix = {
                 "인물 상태 처리 1": b"\x38\x0D",
                 "인물 상태 처리 2": b"\x3D\x0D",
+                "부관 고용·교체": b"\x40\x0D",
             }[kind]
             return {
                 "kind": kind, "raw": raw_prefix + struct.pack("<H", character_id),
+                "value": character_id, "character_id": character_id, "editable": True,
+            }
+        if kind == SPONSOR_AFFINITY_COMMAND_KIND:
+            if character_id is None or not 0 <= character_id <= 0xFFFF:
+                raise ValueError("목록에서 후원자를 선택하세요.")
+            amount = int(str(value).strip())
+            if not -0xFFFFFFFF <= amount <= 0xFFFFFFFF:
+                raise ValueError("친밀도 증감값은 -4,294,967,295~4,294,967,295 범위여야 합니다.")
+            opcode = 0x19 if amount >= 0 else 0x1A
+            return {
+                "kind": kind,
+                "raw": bytes((opcode, 0x12)) + struct.pack("<H", character_id) + b"\x1C\x1C\0\x1A" + struct.pack("<I", abs(amount)),
+                "value": amount, "character_id": character_id, "editable": True,
+            }
+        if kind == SPONSOR_AVAILABILITY_CLEAR_COMMAND_KIND:
+            if character_id is None or not 0 <= character_id <= 0xFFFF:
+                raise ValueError("목록에서 후원자를 선택하세요.")
+            return {
+                "kind": kind, "raw": b"\x38\x12" + struct.pack("<H", character_id),
                 "value": character_id, "character_id": character_id, "editable": True,
             }
         if kind == CITY_NATION_SET_COMMAND_KIND:
@@ -6461,6 +6706,37 @@ class EventEditor:
             return {
                 "kind": kind, "raw": b"\x01\x15" + struct.pack("<H", trade_good_id),
                 "value": trade_good_id, "editable": True,
+            }
+        if kind == TRADE_GOOD_QUANTITY_BRANCH_KIND:
+            if character_id is None or not 0 <= character_id <= 0xFFFF:
+                raise ValueError("목록에서 원산 도시를 선택하세요.")
+            try:
+                trade_good_id = int(str(compare_value).strip())
+                minimum_quantity = int(str(value).strip())
+            except (TypeError, ValueError) as exc:
+                raise ValueError("교역품과 최소 보유 수량을 올바르게 입력하세요.") from exc
+            if not 0 <= trade_good_id <= 69:
+                raise ValueError("교역품 ID는 0~69 범위여야 합니다.")
+            if not 0 <= minimum_quantity <= 0xFFFFFFFF:
+                raise ValueError("최소 보유 수량은 0~4,294,967,295 범위여야 합니다.")
+            return {
+                "kind": kind,
+                "raw": b"\x43\x2C\x08" + struct.pack("<H", character_id) + b"\x15" + struct.pack("<H", trade_good_id) + b"\x1A" + struct.pack("<I", minimum_quantity) + b"\0\0",
+                "value": None, "character_id": character_id, "trade_good_id": trade_good_id,
+                "compare_value": minimum_quantity,
+                "branch_prefix": b"\x43\x2C\x08" + struct.pack("<H", character_id) + b"\x15" + struct.pack("<H", trade_good_id) + b"\x1A" + struct.pack("<I", minimum_quantity),
+                "target_index": None, "editable": True,
+            }
+        if kind == TRADE_GOOD_SALE_COMMAND_KIND:
+            if character_id is None or not 0 <= character_id <= 0xFFFF:
+                raise ValueError("목록에서 원산 도시를 선택하세요.")
+            trade_good_id = int(str(value).strip())
+            if not 0 <= trade_good_id <= 69:
+                raise ValueError("교역품 ID는 0~69 범위여야 합니다.")
+            return {
+                "kind": kind,
+                "raw": b"\x5B\x08" + struct.pack("<H", character_id) + b"\x15" + struct.pack("<H", trade_good_id),
+                "value": trade_good_id, "character_id": character_id, "editable": True,
             }
         if kind in NATION_STATE_COMMAND_KINDS:
             nation_id = int(str(value).strip())
@@ -6868,19 +7144,25 @@ class EventEditor:
             messagebox.showerror(ui("body_add_failed"), ui("select_command_to_add"), parent=self.root)
             return
         try:
-            character_id = self._body_npc_id(self.sponsor_targets if self.body_detail_var.get().startswith("후원자") else self.character_targets) if kind == NPC_BRANCH_KIND else self._body_npc_id() if kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_culture_id() if kind == CULTURE_STRING_COMMAND_KIND else self._body_city_id() if kind in (CITY_STRING_COMMAND_KIND, CITY_NATION_SET_COMMAND_KIND, CITY_STATUS_SET_COMMAND_KIND, *CITY_SIZE_COMMAND_KINDS) or kind in CITY_TARGET_COMMAND_KINDS + (CITY_BRANCH_KIND, RUNTIME_REFERENCE_BRANCH_KIND) else self._body_character_id() if kind in DISCOVERY_NAME_COMMAND_KINDS + (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
+            character_id = self._body_npc_id(self.sponsor_targets if kind in SPONSOR_TARGET_COMMAND_KINDS or (kind == NPC_BRANCH_KIND and self.body_detail_var.get().startswith("후원자")) else self.character_targets) if kind in (NPC_BRANCH_KIND, *SPONSOR_TARGET_COMMAND_KINDS) else self._body_npc_id() if kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_culture_id() if kind == CULTURE_STRING_COMMAND_KIND else self._body_city_id() if kind in (CITY_STRING_COMMAND_KIND, CITY_NATION_SET_COMMAND_KIND, CITY_STATUS_SET_COMMAND_KIND, TRADE_GOOD_SALE_COMMAND_KIND, TRADE_GOOD_QUANTITY_BRANCH_KIND, *CITY_SIZE_COMMAND_KINDS) or kind in CITY_TARGET_COMMAND_KINDS + (CITY_BRANCH_KIND, RUNTIME_REFERENCE_BRANCH_KIND) else self._body_character_id() if kind in DISCOVERY_NAME_COMMAND_KINDS + (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
             speaker_prefix = self._body_speaker_prefix() if kind in DIALOGUE_KINDS else b""
             stat_id = self._body_stat_id() if kind in STAT_COMMAND_KINDS + STAT_REFERENCE_COMMAND_KINDS + NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND,) else None
             token = self._new_body_token(
-                kind, self._body_input_value(kind), character_id, stat_id,
+                kind, self.body_value2_var.get().strip() if kind == TRADE_GOOD_QUANTITY_BRANCH_KIND else self._body_input_value(kind), character_id, stat_id,
                 hint_id=self._body_hint_id() if kind in (HINT_BRANCH_KIND, *HINT_TARGET_COMMAND_KINDS) else None,
                 item_id=self._body_item_id() if kind in (ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND) else None,
                 hint_active=self.body_hint_state_var.get() == "활성", speaker_prefix=speaker_prefix,
-                compare_value=self.special_difficulty_var.get().strip() if kind == "특수 수치 판정" else self._body_source_stat_id() if kind in STAT_REFERENCE_COMMAND_KINDS else f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_RANGE_BRANCH_KIND,) else self.body_value2_var.get().strip() if kind in (YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND) else self._body_nation_id() if kind == RUNTIME_REFERENCE_BRANCH_KIND else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND, "소지금 비교 분기") else None,
+                compare_value=self._body_trade_good_id() if kind == TRADE_GOOD_QUANTITY_BRANCH_KIND else self.special_difficulty_var.get().strip() if kind == "특수 수치 판정" else self._body_source_stat_id() if kind in STAT_REFERENCE_COMMAND_KINDS else f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_RANGE_BRANCH_KIND,) else self.body_value2_var.get().strip() if kind in (YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND) else self._body_nation_id() if kind == RUNTIME_REFERENCE_BRANCH_KIND else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND, "소지금 비교 분기") else None,
                 choice_value=int(self.body_value2_var.get().strip()) if kind == CHOICE_BRANCH_KIND else None,
                 npc_type=0x12 if kind == NPC_BRANCH_KIND and self.body_detail_var.get().startswith("후원자") else 0x0D,
                 battlefield=self.body_battlefield_var.get(),
             )
+            if kind == TRADE_GOOD_QUANTITY_BRANCH_KIND:
+                target_index = int(self.body_value_var.get().strip())
+                if not 1 <= target_index <= len(self.body_tokens):
+                    raise ValueError(f"이동할 행은 1~{len(self.body_tokens)} 범위여야 합니다.")
+                token["target_index"] = target_index
+                token["value"] = target_index
         except (UnicodeEncodeError, ValueError) as exc:
             messagebox.showerror(ui("body_add_failed"), str(exc), parent=self.root)
             return
@@ -6907,19 +7189,25 @@ class EventEditor:
             messagebox.showerror(ui("body_insert_failed"), ui("select_command_to_insert"), parent=self.root)
             return
         try:
-            character_id = self._body_npc_id(self.sponsor_targets if self.body_detail_var.get().startswith("후원자") else self.character_targets) if kind == NPC_BRANCH_KIND else self._body_npc_id() if kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_culture_id() if kind == CULTURE_STRING_COMMAND_KIND else self._body_city_id() if kind in (CITY_STRING_COMMAND_KIND, CITY_NATION_SET_COMMAND_KIND, CITY_STATUS_SET_COMMAND_KIND, *CITY_SIZE_COMMAND_KINDS) or kind in CITY_TARGET_COMMAND_KINDS + (CITY_BRANCH_KIND, RUNTIME_REFERENCE_BRANCH_KIND) else self._body_character_id() if kind in DISCOVERY_NAME_COMMAND_KINDS + (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
+            character_id = self._body_npc_id(self.sponsor_targets if kind in SPONSOR_TARGET_COMMAND_KINDS or (kind == NPC_BRANCH_KIND and self.body_detail_var.get().startswith("후원자")) else self.character_targets) if kind in (NPC_BRANCH_KIND, *SPONSOR_TARGET_COMMAND_KINDS) else self._body_npc_id() if kind in CHARACTER_TARGET_COMMAND_KINDS else self._body_culture_id() if kind == CULTURE_STRING_COMMAND_KIND else self._body_city_id() if kind in (CITY_STRING_COMMAND_KIND, CITY_NATION_SET_COMMAND_KIND, CITY_STATUS_SET_COMMAND_KIND, TRADE_GOOD_SALE_COMMAND_KIND, TRADE_GOOD_QUANTITY_BRANCH_KIND, *CITY_SIZE_COMMAND_KINDS) or kind in CITY_TARGET_COMMAND_KINDS + (CITY_BRANCH_KIND, RUNTIME_REFERENCE_BRANCH_KIND) else self._body_character_id() if kind in DISCOVERY_NAME_COMMAND_KINDS + (DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND) else None
             speaker_prefix = self._body_speaker_prefix() if kind in DIALOGUE_KINDS else b""
             stat_id = self._body_stat_id() if kind in STAT_COMMAND_KINDS + STAT_REFERENCE_COMMAND_KINDS + NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND,) else None
             token = self._new_body_token(
-                kind, self._body_input_value(kind), character_id, stat_id,
+                kind, self.body_value2_var.get().strip() if kind == TRADE_GOOD_QUANTITY_BRANCH_KIND else self._body_input_value(kind), character_id, stat_id,
                 hint_id=self._body_hint_id() if kind in (HINT_BRANCH_KIND, *HINT_TARGET_COMMAND_KINDS) else None,
                 item_id=self._body_item_id() if kind in (ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND) else None,
                 hint_active=self.body_hint_state_var.get() == "활성", speaker_prefix=speaker_prefix,
-                compare_value=self.special_difficulty_var.get().strip() if kind == "특수 수치 판정" else self._body_source_stat_id() if kind in STAT_REFERENCE_COMMAND_KINDS else f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_RANGE_BRANCH_KIND,) else self.body_value2_var.get().strip() if kind in (YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND) else self._body_nation_id() if kind == RUNTIME_REFERENCE_BRANCH_KIND else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND, "소지금 비교 분기") else None,
+                compare_value=self._body_trade_good_id() if kind == TRADE_GOOD_QUANTITY_BRANCH_KIND else self.special_difficulty_var.get().strip() if kind == "특수 수치 판정" else self._body_source_stat_id() if kind in STAT_REFERENCE_COMMAND_KINDS else f"{self.body_value2_var.get().strip()}~{self.body_range_end_var.get().strip()}" if kind in RANDOM_STATE_COMPARE_BRANCH_KINDS + (YEAR_RANGE_BRANCH_KIND,) else self.body_value2_var.get().strip() if kind in (YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND) else self._body_nation_id() if kind == RUNTIME_REFERENCE_BRANCH_KIND else int(self.body_value2_var.get().strip()) if kind in NUMERIC_COMPARE_BRANCH_KINDS + (STATE_REFERENCE_COMPARE_BRANCH_KIND, "소지금 비교 분기") else None,
                 choice_value=int(self.body_value2_var.get().strip()) if kind == CHOICE_BRANCH_KIND else None,
                 npc_type=0x12 if kind == NPC_BRANCH_KIND and self.body_detail_var.get().startswith("후원자") else 0x0D,
                 battlefield=self.body_battlefield_var.get(),
             )
+            if kind == TRADE_GOOD_QUANTITY_BRANCH_KIND:
+                target_index = int(self.body_value_var.get().strip())
+                if not 1 <= target_index <= len(self.body_tokens):
+                    raise ValueError(f"이동할 행은 1~{len(self.body_tokens)} 범위여야 합니다.")
+                token["target_index"] = target_index
+                token["value"] = target_index
         except (UnicodeEncodeError, ValueError) as exc:
             messagebox.showerror(ui("body_insert_failed"), str(exc), parent=self.root)
             return
@@ -7139,56 +7427,15 @@ class EventEditor:
             parent=self.root,
             title=ui("open_disev_dialog_title"),
             filetypes=(
-                (ui("disev_event_file"), ("DISEV.CDS", "HIST_EV.CDS")),
-                (ui("cds_file"), "*.CDS"),
+                (ui("disev_event_file"), "*.CDS"),
                 (ui("all_files"), "*.*"),
             ),
         )
         if filename:
             self._load_archive(Path(filename))
 
-    @classmethod
-    def _detect_event_file_type(cls, parts: list[bytes]) -> str | None:
-        """파일명·파트 수가 아닌 양쪽 파일의 고유 명령으로 종류를 판정한다."""
-        discovery_command_found = False
-        history_command_found = False
-        for part_index, part in enumerate(parts):
-            _step, slots = disev.validate_part(part, part_index)
-            starts = sorted({start for pair in slots for start in pair})
-            for condition_start, body_start in slots:
-                condition_end = disev.chunk_end(part, starts, condition_start)
-                condition = part[condition_start:condition_end]
-                # HIST_EV의 특정 연·월 일치 조건:
-                # 1C 17 [월] 16 [연도 u16] ... FF
-                if (
-                    len(condition) >= 7
-                    and condition[:2] == b"\x1C\x17"
-                    and 1 <= condition[2] <= 12
-                    and condition[3] == 0x16
-                ):
-                    history_command_found = True
-
-                body_end = disev.chunk_end(part, starts, body_start)
-                for token in cls._decode_body_tokens(
-                    part[body_start:body_end], body_part_offset=body_start,
-                ):
-                    if token.get("kind") == "발견물 등록/발견 처리":
-                        discovery_command_found = True
-                        break
-
-                # 고유 명령이 양쪽 모두 나오면 수정·혼합 파일일 수 있으므로
-                # 자동 판정을 중지하고 사용자가 직접 고르게 한다.
-                if discovery_command_found and history_command_found:
-                    return None
-
-        if discovery_command_found:
-            return EVENT_FILE_DISCOVERY
-        if history_command_found:
-            return EVENT_FILE_HISTORY
-        return None
-
     def _choose_event_file_type(self, path: Path) -> str | None:
-        """고유 명령으로 판정할 수 없는 파일의 종류를 중앙 팝업에서 받는다."""
+        """파일을 연 뒤 사용자에게 이벤트 파일 종류를 직접 받는다."""
         result: dict[str, str | None] = {"value": None}
         dialog = tk.Toplevel(self.root)
         dialog.withdraw()
@@ -7202,7 +7449,6 @@ class EventEditor:
             content,
             text=(
                 f"{path.name}\n\n"
-                "고유 명령만으로 파일 종류를 판정할 수 없습니다.\n"
                 "열려는 이벤트 파일의 종류를 선택하세요."
             ),
             justify="center",
@@ -7224,6 +7470,14 @@ class EventEditor:
             command=lambda: finish(EVENT_FILE_HISTORY),
         ).pack(side="left", padx=(0, 6))
         ttk.Button(
+            button_row, text="퀘스트 이벤트", width=17,
+            command=lambda: finish(EVENT_FILE_EXTERNAL_QUEST),
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
+            button_row, text="스토리 이벤트", width=15,
+            command=lambda: finish(EVENT_FILE_STORY),
+        ).pack(side="left", padx=(0, 6))
+        ttk.Button(
             button_row, text="취소", width=9,
             command=lambda: finish(None),
         ).pack(side="left")
@@ -7237,6 +7491,55 @@ class EventEditor:
         dialog.wait_window()
         return result["value"]
 
+    @staticmethod
+    def _base_dialogue_speakers() -> dict[str, bytes]:
+        """Return the globally known Korean speaker labels and their raw tags."""
+        return {
+            "화자 없음": b"",
+            **{
+                name: tag + b"\x81\x46"
+                for tag, name in disev.SPEAKER_NAMES.items()
+            },
+        }
+
+    def _refresh_dialogue_speakers_from_parts(self, parts: list[bytes]) -> None:
+        """Add every speaker tag used by the opened archive to the combobox.
+
+        A dialogue speaker is a literal CP932 tag followed by 81 46, rather
+        than a character-ID operand.  Static names cover known Korean mappings;
+        an arbitrary tag remains selectable with its decoded original text.
+        """
+        speakers = self._base_dialogue_speakers()
+        prefixes: set[bytes] = set()
+        for part_index, part in enumerate(parts):
+            try:
+                _step, slots = disev.validate_part(part, part_index)
+                starts = sorted({offset for pair in slots for offset in pair})
+                for _condition_start, body_start in slots:
+                    body_end = disev.chunk_end(part, starts, body_start)
+                    for token in self._decode_body_tokens(part[body_start:body_end], body_part_offset=body_start):
+                        prefix = bytes(token.get("speaker_prefix", b""))
+                        if prefix.endswith(b"\x81\x46"):
+                            prefixes.add(prefix)
+            except (ValueError, struct.error):
+                continue
+        used_values = set(speakers.values())
+        for prefix in sorted(prefixes):
+            if prefix in used_values:
+                continue
+            tag = prefix[:-2]
+            label = disev.SPEAKER_NAMES.get(tag) or tag.decode("cp932", errors="replace")
+            unique_label = label
+            suffix = 2
+            while unique_label in speakers:
+                unique_label = f"{label} ({suffix})"
+                suffix += 1
+            speakers[unique_label] = prefix
+            used_values.add(prefix)
+        self.dialogue_speakers = speakers
+        self.body_speaker_combo.configure(values=tuple(speakers))
+        self._autosize_combobox(self.body_speaker_combo)
+
     def _load_archive(self, path: Path) -> None:
         try:
             archive = path.read_bytes()
@@ -7249,11 +7552,9 @@ class EventEditor:
             messagebox.showerror(ui("open_failed"), str(exc), parent=self.root)
             return
 
-        event_file_type = self._detect_event_file_type(parts)
+        event_file_type = self._choose_event_file_type(path)
         if event_file_type is None:
-            event_file_type = self._choose_event_file_type(path)
-            if event_file_type is None:
-                return
+            return
 
         self.disev_path = path.resolve()
         self.event_file_type = event_file_type
@@ -7263,6 +7564,7 @@ class EventEditor:
         self.entries = entries
         self.parts = parts
         self.original_parts = list(parts)
+        self._refresh_dialogue_speakers_from_parts(parts)
         self.part_source_indices = list(range(len(parts)))
         self.modified.clear()
         self.structure_modified = False
@@ -7774,6 +8076,79 @@ class EventEditor:
                 tokens.append({"kind": "본문 끝", "raw": b"\xFF", "value": None, "editable": False})
                 i += 1
                 continue
+            # 40 0D는 지정 인물을 부관으로 고용하고, 기존 부관이 있으면
+            # 교체한다. 0x40B027 처리기와 두 결과 메시지에서 확인했다.
+            if i + 4 <= len(body) and body[i:i + 2] == b"\x40\x0D":
+                character_id = struct.unpack_from("<H", body, i + 2)[0]
+                tokens.append({
+                    "kind": "부관 고용·교체", "raw": body[i:i + 4],
+                    "value": character_id, "character_id": character_id, "editable": True,
+                })
+                i += 4
+                continue
+            # 외부 퀘스트 이벤트의 반환 형식. 58은 다음 1바이트를 읽어
+            # 런타임 반환 코드에 값+1을 기록하고, 결과 상태를 미처리(2)로
+            # 두며 현재 해석을 끝낸다. 값 0~4의 게임상 의미는 아직 확정하지
+            # 않았지만, 명령 경계와 원본 사용 범위는 확인됐으므로 그 범위 안에서
+            # 값 편집과 재인코딩을 허용한다.
+            if i + 2 <= len(body) and body[i] == 0x58:
+                tokens.append({
+                    "kind": ECQ_RETURN_COMMAND_KIND, "raw": body[i:i + 2],
+                    "value": body[i + 1], "editable": body[i + 1] <= 4,
+                })
+                i += 2
+                continue
+            # 06은 외부 퀘스트 반환 레코드에 기본 완료 표식과 반환값 1을 기록한다.
+            # 뒤의 4C/4D/4E 또는 FF는 별도 명령이므로 함께 묶지 않는다.
+            if body[i] == 0x06:
+                tokens.append({
+                    "kind": ECQ_DEFAULT_RETURN_KIND, "raw": b"\x06",
+                    "value": 0, "editable": True,
+                })
+                i += 1
+                continue
+            # 04는 다음 바이트를 소비하지 않는 독립 명령이다. 런타임 상태를 2로
+            # 기록하고 호출부가 -1을 반환하게 한다. 바로 뒤의 4D는 이후 분기에서
+            # 독립된 결과 상태 1 명령으로 해석한다.
+            if body[i] == 0x04:
+                tokens.append({
+                    "kind": ECQ_ABORT_COMMAND_KIND, "raw": body[i:i + 1],
+                    "value": None, "editable": True,
+                })
+                i += 1
+                continue
+            # 43 2C 08 [원산 도시 u16] 15 [교역품 u16] 1A [수량 u32] [상대 이동 u16]
+            # 는 보유 수량이 기준보다 미만인지 판정한다. 43 래퍼는 하위 판정이
+            # 거짓일 때 이동하므로, 실제 목적 행은 '보유 수량 이상' 경로다.
+            if (
+                i + 15 <= len(body)
+                and body[i:i + 3] == b"\x43\x2C\x08"
+                and body[i + 5] == 0x15
+                and body[i + 8] == 0x1A
+            ):
+                city_id = struct.unpack_from("<H", body, i + 3)[0]
+                trade_good_id = struct.unpack_from("<H", body, i + 6)[0]
+                minimum_quantity = struct.unpack_from("<I", body, i + 9)[0]
+                tokens.append({
+                    "kind": TRADE_GOOD_QUANTITY_BRANCH_KIND, "raw": body[i:i + 15],
+                    "value": None, "character_id": city_id, "trade_good_id": trade_good_id,
+                    "compare_value": minimum_quantity, "branch_prefix": body[i:i + 13],
+                    "editable": True,
+                })
+                i += 15
+                continue
+            # 5B 08 [원산 도시 u16] 15 [교역품 u16]: 해당 원산 도시·교역품의
+            # 화물을 전량 제거하고 현재 도시의 거래값으로 정산한다. EXE 0x40B3C8의
+            # 08 분기는 8개 화물 칸을 순회해 일치 레코드를 직접 비운다.
+            if i + 7 <= len(body) and body[i:i + 2] == b"\x5B\x08" and body[i + 4] == 0x15:
+                city_id = struct.unpack_from("<H", body, i + 2)[0]
+                trade_good_id = struct.unpack_from("<H", body, i + 5)[0]
+                tokens.append({
+                    "kind": TRADE_GOOD_SALE_COMMAND_KIND, "raw": body[i:i + 7],
+                    "value": trade_good_id, "character_id": city_id, "editable": True,
+                })
+                i += 7
+                continue
             # 43 [0F/12] 0E [힌트 u16] [상대 이동 u16]: 힌트 상태 조건 분기.
             if (
                 i + 7 <= len(body)
@@ -8270,6 +8645,16 @@ class EventEditor:
                 tokens.append({"kind": "힌트 획득", "raw": body[i:i + 4], "value": struct.unpack_from("<H", body, i + 2)[0], "editable": True})
                 i += 4
                 continue
+            # 38 12 [후원자 u16]: 후원자 레코드의 사용 가능 비트(15)를 해제한다.
+            # 38은 하위 형식 0D(인물 조우 처리)와 12(후원자 사용 가능 해제)를 가진다.
+            if i + 4 <= len(body) and body[i:i + 2] == b"\x38\x12":
+                sponsor_id = struct.unpack_from("<H", body, i + 2)[0]
+                tokens.append({
+                    "kind": SPONSOR_AVAILABILITY_CLEAR_COMMAND_KIND, "raw": body[i:i + 4],
+                    "value": sponsor_id, "character_id": sponsor_id, "editable": True,
+                })
+                i += 4
+                continue
             # 26 0E [힌트 u16]: 힌트 상태에 등장 플래그 0x08을 설정해
             # 미획득 상태로 등록한다. 하위 활성 상태 비트는 변경하지 않는다.
             if i + 4 <= len(body) and body[i:i + 2] == b"\x26\x0E":
@@ -8487,6 +8872,25 @@ class EventEditor:
                 tokens.append({"kind": "델포이 신탁 출력", "raw": b"\x31", "value": None, "editable": True})
                 i += 1
                 continue
+            # 19/1A 12 [후원자 u16] 1C 1C 00 1A [u32]: 후원자 레코드(+0x20)의
+            # 친밀도를 증감하고 EXE가 결과를 0~100으로 제한한다. 19는 증가,
+            # 1A는 감소이며, 12 뒤의 u16은 일반 상태값 ID가 아니라 후원자 ID다.
+            if (
+                i + 12 <= len(body)
+                and body[i] in (0x19, 0x1A)
+                and body[i + 1] == 0x12
+                and body[i + 4:i + 7] == b"\x1C\x1C\0"
+                and body[i + 7] == 0x1A
+            ):
+                sponsor_id = struct.unpack_from("<H", body, i + 2)[0]
+                raw_amount = struct.unpack_from("<I", body, i + 8)[0]
+                tokens.append({
+                    "kind": SPONSOR_AFFINITY_COMMAND_KIND, "raw": body[i:i + 12],
+                    "value": raw_amount if body[i] == 0x19 else -raw_amount,
+                    "character_id": sponsor_id, "editable": True,
+                })
+                i += 12
+                continue
             # 19 1C [대상 상태값 u16] 1C [피연산자 종류 u16]: 계산된 수치를 대상에 더한다.
             # 두 번째 1C의 u16은 상태값 ID가 아니라 EXE의 범용 수치 피연산자 종류 코드다.
             # 13h는 주인공 성격 첫 축(소심↔거만)을 읽는 것으로 확인됐다.
@@ -8584,8 +8988,8 @@ class EventEditor:
                     token["value"] = part_offset
                     token["raw_offset_only"] = True
                     token["editable"] = False
-            elif token.get("kind") in (HINT_BRANCH_KIND, DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND, ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND, YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND, YEAR_RANGE_BRANCH_KIND, CITY_BRANCH_KIND, NPC_BRANCH_KIND, CHOICE_BRANCH_KIND, STATE_REFERENCE_COMPARE_BRANCH_KIND, RUNTIME_REFERENCE_BRANCH_KIND, "소지금 비교 분기") + NUMERIC_COMPARE_BRANCH_KINDS:
-                relative_offset = 14 if token.get("kind") in RANDOM_STATE_COMPARE_BRANCH_KINDS else 10 if token.get("kind") in (ABILITY_COMPARE_BRANCH_KIND, ABILITY_COMPARE3_BRANCH_KIND, STATE_GREATER_BRANCH_KIND, STATE_LESS_BRANCH_KIND, STATE_LESS_OR_EQUAL_BRANCH_KIND, "소지금 비교 분기") else int(token.get("relative_offset", 9)) if token.get("kind") in (STATE_REFERENCE_COMPARE_BRANCH_KIND, STATE_SCALAR_COMPARE_BRANCH_KIND) else 8 if token.get("kind") == RUNTIME_REFERENCE_BRANCH_KIND else 8 if token.get("kind") == YEAR_RANGE_BRANCH_KIND else 4 if token.get("kind") == CHOICE_BRANCH_KIND else 5
+            elif token.get("kind") in (HINT_BRANCH_KIND, DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND, ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND, YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND, YEAR_RANGE_BRANCH_KIND, CITY_BRANCH_KIND, NPC_BRANCH_KIND, CHOICE_BRANCH_KIND, STATE_REFERENCE_COMPARE_BRANCH_KIND, RUNTIME_REFERENCE_BRANCH_KIND, "소지금 비교 분기", TRADE_GOOD_QUANTITY_BRANCH_KIND) + NUMERIC_COMPARE_BRANCH_KINDS:
+                relative_offset = 13 if token.get("kind") == TRADE_GOOD_QUANTITY_BRANCH_KIND else 14 if token.get("kind") in RANDOM_STATE_COMPARE_BRANCH_KINDS else 10 if token.get("kind") in (ABILITY_COMPARE_BRANCH_KIND, ABILITY_COMPARE3_BRANCH_KIND, STATE_GREATER_BRANCH_KIND, STATE_LESS_BRANCH_KIND, STATE_LESS_OR_EQUAL_BRANCH_KIND, "소지금 비교 분기") else int(token.get("relative_offset", 9)) if token.get("kind") in (STATE_REFERENCE_COMPARE_BRANCH_KIND, STATE_SCALAR_COMPARE_BRANCH_KIND) else 8 if token.get("kind") == RUNTIME_REFERENCE_BRANCH_KIND else 8 if token.get("kind") == YEAR_RANGE_BRANCH_KIND else 4 if token.get("kind") == CHOICE_BRANCH_KIND else 5
                 target_offset = offset + len(raw) + struct.unpack_from("<H", raw, relative_offset)[0]
                 target_number = offsets.get(target_offset)
                 token["target_index"] = target_number
@@ -8718,7 +9122,11 @@ class EventEditor:
         if kind not in BODY_COMMAND_KINDS:
             return
         try:
-            if kind in DIALOGUE_KINDS:
+            if kind == ECQ_RETURN_COMMAND_KIND:
+                token.update(self._new_body_token(kind, self.body_value_var.get()))
+            elif kind in (ECQ_DEFAULT_RETURN_KIND, ECQ_ABORT_COMMAND_KIND):
+                token.update(self._new_body_token(kind))
+            elif kind in DIALOGUE_KINDS:
                 text = self.body_value_var.get()
                 preserve_encoded = (
                     kind == token.get("kind")
@@ -8807,6 +9215,14 @@ class EventEditor:
                 ))
             elif kind in CHARACTER_TARGET_COMMAND_KINDS:
                 token.update(self._new_body_token(kind, self._body_input_value(kind), character_id=self._body_npc_id()))
+            elif kind == SPONSOR_AFFINITY_COMMAND_KIND:
+                token.update(self._new_body_token(
+                    kind, self._body_input_value(kind), character_id=self._body_npc_id(self.sponsor_targets),
+                ))
+            elif kind == SPONSOR_AVAILABILITY_CLEAR_COMMAND_KIND:
+                token.update(self._new_body_token(
+                    kind, character_id=self._body_npc_id(self.sponsor_targets),
+                ))
             elif kind in (CITY_NATION_SET_COMMAND_KIND, CITY_STATUS_SET_COMMAND_KIND):
                 token.update(self._new_body_token(
                     kind, self._body_input_value(kind), character_id=self._body_city_id(),
@@ -8827,6 +9243,19 @@ class EventEditor:
                 token.update(self._new_body_token(kind, self.special_check_value_var.get(), compare_value=self.special_difficulty_var.get()))
             elif kind in ("STORY0.CDS 외 분기", "STORY1.CDS 외 분기"):
                 token.update(self._new_body_token(kind, self.body_value_var.get()))
+            elif kind == TRADE_GOOD_QUANTITY_BRANCH_KIND:
+                target_index = int(self.body_value_var.get().strip())
+                if not 1 <= target_index <= len(self.body_tokens):
+                    raise ValueError(f"이동할 행은 1~{len(self.body_tokens)} 범위여야 합니다.")
+                if target_index <= self.selected_body_index + 1:
+                    raise ValueError("이동할 행은 현재 행보다 뒤에 있어야 합니다.")
+                updated = self._new_body_token(
+                    kind, self.body_value2_var.get().strip(), character_id=self._body_city_id(),
+                    compare_value=self._body_trade_good_id(),
+                )
+                updated["target_index"] = target_index
+                updated["value"] = target_index
+                token.update(updated)
             elif kind in ("결과 거짓 시 이동", "결과 참 시 이동", "이전 조건 참 시 이동", "부관 고용 조건 이동", "소지금 비교 분기", RUNTIME_REFERENCE_BRANCH_KIND, CHOICE_BRANCH_KIND, HINT_BRANCH_KIND, DISCOVERY_BRANCH_KIND, DISCOVERY_REGISTRATION_BRANCH_KIND, ITEM_POSSESSION_BRANCH_KIND, ITEM_ABSENCE_BRANCH_KIND, YEAR_BRANCH_KIND, YEAR_UPPER_BRANCH_KIND, YEAR_RANGE_BRANCH_KIND, CITY_BRANCH_KIND, NPC_BRANCH_KIND, STATE_REFERENCE_COMPARE_BRANCH_KIND) + NUMERIC_COMPARE_BRANCH_KINDS:
                 target_index = int(self.body_value_var.get().strip())
                 if not 1 <= target_index <= len(self.body_tokens):
@@ -8871,6 +9300,10 @@ class EventEditor:
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
             elif kind == "교역품 활성화":
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
+            elif kind == TRADE_GOOD_SALE_COMMAND_KIND:
+                token.update(self._new_body_token(
+                    kind, self._body_input_value(kind), character_id=self._body_city_id(),
+                ))
             elif kind in MEDIA_PREVIEW_KINDS:
                 token.update(self._new_body_token(kind, self._body_input_value(kind)))
             elif kind in ("소지금 증가", "소지금 감소", "특수 상태 처리"):
@@ -8961,6 +9394,29 @@ class EventEditor:
                 (name for candidate_id, name in self.city_targets if candidate_id == city_id),
                 f"도시 {city_id}",
             )
+        elif kind == TRADE_GOOD_SALE_COMMAND_KIND:
+            city_id = int(token.get("character_id", -1))
+            trade_good_id = int(token.get("value", -1))
+            fourth = next(
+                (name for candidate_id, name in self.city_targets if candidate_id == city_id),
+                f"도시 {city_id}",
+            )
+            fifth = next(
+                (name for candidate_id, name in self.trade_good_targets if candidate_id == trade_good_id),
+                f"교역품 {trade_good_id}",
+            )
+        elif kind == TRADE_GOOD_QUANTITY_BRANCH_KIND:
+            city_id = int(token.get("character_id", -1))
+            trade_good_id = int(token.get("trade_good_id", -1))
+            fourth = next(
+                (name for candidate_id, name in self.city_targets if candidate_id == city_id),
+                f"도시 {city_id}",
+            )
+            fifth = next(
+                (name for candidate_id, name in self.trade_good_targets if candidate_id == trade_good_id),
+                f"교역품 {trade_good_id}",
+            )
+            detail = f"보유 수량 {token.get('compare_value', '-')} 이상이면 이동"
         elif kind in CITY_SIZE_COMMAND_KINDS:
             city_id = int(token.get("character_id", -1))
             fourth = next(
@@ -9049,6 +9505,8 @@ class EventEditor:
             return "-"
         if kind == "특수 수치 판정":
             return f"{value}개" if int(token.get("difficulty", -1)) == 5 else "-"
+        if kind == TRADE_GOOD_SALE_COMMAND_KIND:
+            return "-"
         if kind in ("일기토 실행", "육상전 실행"):
             target_id = int(value)
             target_name = next(
@@ -9303,13 +9761,12 @@ class EventEditor:
         for asset in release.get("assets", []):
             if isinstance(asset, dict) and asset.get("name") == expected:
                 return asset
-        return next((asset for asset in release.get("assets", [])
-                     if isinstance(asset, dict) and str(asset.get("name", "")).lower().endswith(".zip")), None)
+        return None
 
     @staticmethod
     def _extract_update_executable(archive_path: str) -> str:
-        """업데이트 ZIP에서 단일 DISEV EXE만 임시 폴더에 안전하게 푼다."""
-        extract_directory = tempfile.mkdtemp(prefix="Event_Editor_update_")
+        """업데이트 ZIP에서 단일 편집기 EXE만 임시 폴더에 안전하게 푼다."""
+        extract_directory = tempfile.mkdtemp(prefix="CDS_Event_Editor_update_")
         try:
             with zipfile.ZipFile(archive_path) as archive:
                 candidates = [entry for entry in archive.infolist()
@@ -9533,7 +9990,7 @@ class EventEditor:
                 download_path = partial_path[:-5]
                 digest = hashlib.sha256()
                 request = Request(str(asset["browser_download_url"]), headers={
-                    "Accept": "application/octet-stream", "User-Agent": f"Event-Editor/{APP_VERSION}",
+                    "Accept": "application/octet-stream", "User-Agent": f"CDS-Event-Editor/{APP_VERSION}",
                 })
                 with urlopen(request, timeout=30) as response, open(partial_path, "wb") as output:
                     for chunk in iter(lambda: response.read(1024 * 1024), b""):
@@ -9561,7 +10018,7 @@ class EventEditor:
                 except tk.TclError:
                     pass
 
-        threading.Thread(target=worker, name="disev-update-download", daemon=True).start()
+        threading.Thread(target=worker, name="cds-event-editor-update-download", daemon=True).start()
 
     def _handle_update_download_error(self, error: object) -> None:
         self._update_download_in_progress = False
@@ -9574,9 +10031,9 @@ class EventEditor:
             self._update_download_in_progress = False
             self._set_update_menu_state("normal")
             return
-        target_path = os.path.abspath(sys.executable)
-        script_path = os.path.join(tempfile.gettempdir(), f"Event_Editor_update_{os.getpid()}.cmd")
-        notice_path = os.path.join(tempfile.gettempdir(), f"Event_Editor_update_notice_{os.getpid()}.json")
+        target_path = os.path.join(os.path.dirname(os.path.abspath(sys.executable)), UPDATE_EXECUTABLE_NAME)
+        script_path = os.path.join(tempfile.gettempdir(), f"CDS_Event_Editor_update_{os.getpid()}.cmd")
+        notice_path = os.path.join(tempfile.gettempdir(), f"CDS_Event_Editor_update_notice_{os.getpid()}.json")
         try:
             with open(notice_path, "w", encoding="utf-8") as output:
                 json.dump({"version": str(release.get("tag_name", "")).lstrip("vV"),
