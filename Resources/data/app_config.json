@@ -1,5 +1,5 @@
 {
-  "version": "2.1.0",
+  "version": "2.1.1",
   "update": {
     "repository": "dkenldlqfur/cds_disev_editor",
     "asset_name": "CDS_Event_Editor_v{version}.zip"

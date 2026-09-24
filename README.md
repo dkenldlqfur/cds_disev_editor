@@ -80,8 +80,8 @@ py -3 -m PyInstaller --noconfirm --clean CDS_Event_Editor.spec
 
 자동 업데이트가 Release 파일을 찾으려면 아래 형식을 지켜야 합니다.
 
-- 태그: `v0.2`처럼 버전 번호 사용
-- ZIP 파일명: `CDS_Event_Editor_v0.2.zip`
+- 태그: `v2.1.1`처럼 버전 번호 사용
+- ZIP 파일명: `CDS_Event_Editor_v2.1.1.zip`
 - ZIP 내부: `CDS_Event_Editor.exe` 파일 하나
 - Release 본문: 사용자에게 표시할 업데이트 내역
 

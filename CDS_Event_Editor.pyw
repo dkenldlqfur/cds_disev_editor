@@ -7971,13 +7971,21 @@ class EventEditor:
         if len(self.slot_drafts) >= 16:
             messagebox.showwarning("슬롯 추가", "슬롯은 최대 16개까지 추가할 수 있습니다.", parent=self.root)
             return
+        answer = messagebox.askyesnocancel(
+            "슬롯 추가",
+            f"이전 슬롯(슬롯 {len(self.slot_drafts)})의 내용을 복사하시겠습니까?\n"
+            "예: 이전 슬롯 복사 / 아니요: 빈 슬롯 추가 / 취소: 추가하지 않음",
+            parent=self.root,
+        )
+        if answer is None:
+            return
         if not self._capture_current_slot_draft():
             return
-        source = self.slot_drafts[self.current_slot_index]
+        source = self.slot_drafts[-1]
         self.slot_drafts.append({
             # 조건열과 본문은 각각 FF 하나가 빈 상태이자 정상 종료 형식이다.
-            "condition": b"\xFF",
-            "body": b"\xFF",
+            "condition": bytes(source["condition"]) if answer else b"\xFF",
+            "body": bytes(source["body"]) if answer else b"\xFF",
             "condition_start": int(source["condition_start"]),
             "body_start": int(source["body_start"]),
         })
@@ -7985,7 +7993,8 @@ class EventEditor:
         self.pending = True
         self._rebuild_slot_tabs(new_index)
         self._load_slot_editor(new_index)
-        self.status_var.set(f"슬롯 {new_index + 1}을 추가했습니다.")
+        action = "복사해 추가" if answer else "빈 내용으로 추가"
+        self.status_var.set(f"슬롯 {new_index + 1}을 {action}했습니다.")
 
     def _remove_slot(self, slot_index: int) -> None:
         if len(self.slot_drafts) <= 1 or not 0 <= slot_index < len(self.slot_drafts):
