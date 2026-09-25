@@ -1242,7 +1242,64 @@ class NativeWinEdit:
         host.grid_propagate(False)
         host.bind("<Configure>", self._resize, add="+")
         host.bind("<Map>", self._wake_poll, add="+")
+        # Win32 EDIT는 Tk 위젯이 아니므로, Tk 컨트롤을 클릭했을 때 Tk의
+        # 기본 포커스 처리가 네이티브 자식 창까지 포커스를 넘기지 못하는
+        # 경우가 있다. 클릭 기본 처리가 끝난 뒤에도 EDIT가 포커스를 갖고
+        # 있을 때만 클릭한 Tk 컨트롤로 포커스를 넘긴다.
+        native_edits = getattr(self.root, "_native_win_edits", None)
+        if native_edits is None:
+            native_edits = []
+            setattr(self.root, "_native_win_edits", native_edits)
+            self.root.bind("<ButtonPress-1>", NativeWinEdit._transfer_focus_after_tk_click, add="+")
+        native_edits.append(self)
         self.root.after_idle(self._create)
+
+    @staticmethod
+    def _transfer_focus_after_tk_click(event) -> None:
+        clicked = event.widget
+        try:
+            root = clicked.winfo_toplevel()
+            native_edits = getattr(root, "_native_win_edits", ())
+            user32 = ctypes.windll.user32
+            user32.GetFocus.restype = ctypes.c_void_p
+            active = [edit for edit in native_edits if edit.hwnd and edit.hwnd == user32.GetFocus()]
+            if not active:
+                return
+            # 네이티브 EDIT 자신을 클릭한 경우에는 일반 포커스 흐름을 건드리지 않는다.
+            for edit in active:
+                widget = clicked
+                while widget is not None:
+                    if widget is edit.host:
+                        return
+                    widget = getattr(widget, "master", None)
+
+            def transfer() -> None:
+                try:
+                    if not clicked.winfo_exists() or not clicked.winfo_viewable():
+                        return
+                    # 클릭한 위젯의 기본 바인딩이 이미 포커스를 옮겼다면 그대로 둔다.
+                    if not any(edit.hwnd == user32.GetFocus() for edit in active):
+                        return
+                    # 네이티브 EDIT와 Tk의 논리 포커스가 분리된 경우를 위해
+                    # Tk 논리 포커스와 실제 HWND 포커스를 모두 클릭 대상에 맞춘다.
+                    clicked.focus_force()
+                    target_hwnd = ctypes.c_void_p(int(clicked.winfo_id()))
+                    user32.SetFocus.argtypes = (ctypes.c_void_p,)
+                    user32.SetFocus.restype = ctypes.c_void_p
+                    user32.SetFocus(target_hwnd)
+                    if user32.GetFocus() != target_hwnd.value:
+                        # 일부 Tk 테마 위젯은 자신 대신 내부 자식 창에 포커스를 둔다.
+                        # 그 경우 Tk가 보고한 실제 포커스 위젯의 HWND를 사용한다.
+                        focus_path = clicked.tk.call("focus")
+                        if focus_path:
+                            focus_widget = clicked.nametowidget(focus_path)
+                            user32.SetFocus(ctypes.c_void_p(int(focus_widget.winfo_id())))
+                except (tk.TclError, ctypes.ArgumentError):
+                    pass
+
+            root.after_idle(transfer)
+        except (tk.TclError, AttributeError, OSError):
+            pass
 
     def _create(self) -> None:
         if self.hwnd or not self.host.winfo_exists():
@@ -1339,6 +1396,12 @@ class NativeWinEdit:
         if self.hwnd and self._user32 is not None:
             self._user32.DestroyWindow(ctypes.c_void_p(self.hwnd))
             self.hwnd = None
+        native_edits = getattr(self.root, "_native_win_edits", None)
+        if native_edits is not None:
+            try:
+                native_edits.remove(self)
+            except ValueError:
+                pass
 
 
 class NativeEdit:
@@ -1403,6 +1466,12 @@ class NativeEdit:
 
     def grid_info(self):
         return self.host.grid_info()
+
+    def pack(self, *args, **kwargs) -> None:
+        self.host.pack(*args, **kwargs)
+
+    def pack_forget(self) -> None:
+        self.host.pack_forget()
 
     def configure(self, **kwargs) -> None:
         state = kwargs.pop("state", None)
@@ -1626,6 +1695,7 @@ class EventEditor:
 
         self._configure_styles()
         self._build_ui()
+        self._bind_native_edit_focus_targets(self.root)
         for combo in (
             self.condition_action_combo,
             self.condition_kind_combo,
@@ -1657,6 +1727,21 @@ class EventEditor:
             self.root.after(400, self._show_update_notice)
         if UPDATE_LATEST_URL:
             self.root.after(1500, lambda: self.check_for_updates(automatic=True))
+
+    @staticmethod
+    def _bind_native_edit_focus_targets(widget: tk.Widget) -> None:
+        """클릭 기본 바인딩이 이벤트를 끊는 위젯에도 네이티브 포커스 이양을 적용한다."""
+        try:
+            widget.bind(
+                "<ButtonPress-1>",
+                NativeWinEdit._transfer_focus_after_tk_click,
+                add="+",
+            )
+            children = widget.winfo_children()
+        except tk.TclError:
+            return
+        for child in children:
+            EventEditor._bind_native_edit_focus_targets(child)
 
     def _autosize_combobox(self, combo: ttk.Combobox, minimum: int = 6, maximum: int | None = None) -> None:
         """목록의 가장 긴 텍스트에 맞춰 네이티브 콤보 상자의 문자 폭을 맞춘다."""
@@ -2001,8 +2086,8 @@ class EventEditor:
         self.condition_action_combo.pack(side="left", padx=(5, 6))
         self.condition_action_combo.bind("<<ComboboxSelected>>", self._condition_action_changed)
         self.condition_insert_row_label = ttk.Label(condition_action_row, text=ui("insert_row"))
-        self.condition_insert_row_entry = ttk.Entry(
-            condition_action_row, textvariable=self.condition_insert_row_var, width=6,
+        self.condition_insert_row_entry = NativeEdit(
+            condition_action_row, self.condition_insert_row_var, width=60, numeric=True,
         )
         self.condition_apply_button = ttk.Button(
             condition_action_row, text=ui("apply_operation"), command=self._run_condition_action,
@@ -2252,8 +2337,8 @@ class EventEditor:
         self.body_action_combo.pack(side="left", padx=(5, 6))
         self.body_action_combo.bind("<<ComboboxSelected>>", self._body_action_changed)
         self.body_insert_row_label = ttk.Label(self.body_action_row, text=ui("insert_row"))
-        self.body_insert_row_entry = ttk.Entry(
-            self.body_action_row, textvariable=self.body_insert_row_var, width=6,
+        self.body_insert_row_entry = NativeEdit(
+            self.body_action_row, self.body_insert_row_var, width=60, numeric=True,
         )
         self.body_apply_button = ttk.Button(
             self.body_action_row, text=ui("apply_operation"), command=self._run_body_action,
